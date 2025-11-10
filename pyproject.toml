@@ -1,14 +1,20 @@
-[project]
+[tool.poetry]
 name = "tma"
 version = "0.1.0"
 description = "Kzon's Torn Market Analyzer"
-requires-python = ">=3.9"
-dependencies = [
-  "streamlit>=1.32",
-  "requests>=2.31",
-  "pandas>=2.1",
-  "numpy>=1.26",
-]
+authors = ["Laya <you@example.com>"]
+readme = "README.md"
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[tool.poetry.dependencies]
+python = ">=3.10,<3.13"
+streamlit = "^1.51.0"
+pandas = "^2.2"
+numpy = "^1.26"
+requests = "^2.31"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0"
+
+[build-system]
+requires = ["poetry-core>=1.8.0"]
+build-backend = "poetry.core.masonry.api"
