@@ -1,0 +1,14 @@
+[project]
+name = "tma"
+version = "0.1.0"
+description = "Kzon's Torn Market Analyzer"
+requires-python = ">=3.9"
+dependencies = [
+  "streamlit>=1.32",
+  "requests>=2.31",
+  "pandas>=2.1",
+  "numpy>=1.26",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
