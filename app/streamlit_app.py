@@ -13,31 +13,14 @@ from tma.io_utils import to_csv_bytes, apply_display_formatting
 st.set_page_config(page_title="Kzon's Torn Market Analyzer", layout="wide")
 
 
-# ---------- Query params ----------
-def get_query_params():
-    try:
-        return dict(st.query_params)
-    except Exception:
-        return st.experimental_get_query_params()
+# ---------- Cache handling ----------
+@st.cache_data(show_spinner=False)
+def get_cached_api_key() -> str:
+    return ""
 
-
-def set_query_params(**kwargs):
-    try:
-        st.query_params.clear()
-        for k, v in kwargs.items():
-            if v is None:
-                continue
-            st.query_params[k] = v
-    except Exception:
-        st.experimental_set_query_params(**kwargs)
-
-
-_qp = get_query_params()
-_api_key_from_qs = _qp.get("api_key", "")
-if isinstance(_api_key_from_qs, list):
-    _api_key_from_qs = _api_key_from_qs[0] if _api_key_from_qs else ""
-if "api_key" not in st.session_state:
-    st.session_state.api_key = _api_key_from_qs or ""
+@st.cache_data(show_spinner=False)
+def set_cached_api_key(value: str):
+    return value
 
 
 # ---------- Header ----------
@@ -60,19 +43,20 @@ with left:
             label_visibility="collapsed",
         )
 
-        st.caption("Enter your *public* API key (stored in the URL for persistence if enabled).")
+        st.caption("Enter your *public* API key (stored locally in cache for your convenience).")
+        cached_key = get_cached_api_key()
         api_key = st.text_input(
             label="API key",
-            value=st.session_state.get("api_key", ""),
+            value=cached_key,
             placeholder="Enter your public API key…",
             label_visibility="collapsed",
             key="api_key",
         )
 
         remember = st.checkbox(
-            "Remember API key in URL",
+            "Remember API key in cache",
             value=True,
-            help="Stores api_key as a query parameter so it persists across sessions and refreshes.",
+            help="Stores your API key securely in local cache (never shared).",
         )
 
         submitted = st.form_submit_button("Run")
@@ -85,11 +69,12 @@ with right:
             border-radius:8px;
             padding:14px 16px;
         ">
-          <h4 style="margin:0 0 0.6rem 0;">What this app does?</h4>
+          <h4 style="margin:0 0 0.6rem 0;">What this app does</h4>
           <ul style="margin:0; padding-left:1.1rem; line-height:1.45;">
             <li><b>Parses & cleans</b> your pasted inventory text.</li>
-            <li><b>Fuzzy-matches</b> item names against a local dictionary.</li>
-            <li><b>Queries Torn</b> <code>itemmarket</code> for each matched item.</li>
+            <li><b>Fuzzy-matches</b> item names against a local dictionary (threshold fixed at 80).</li>
+            <li><b>Queries Torn</b> <code>itemmarket</code> for each matched item using your public API key.</li>
+            <li><b>Stores your API key locally in cache</b> for convenience — it is <i>never sent or shared</i>.</li>
             <li><b>Computes KPIs</b>: min/max price, mean price, depth cost, price spread & volatility.</li>
             <li><b>Suggests sale prices</b> and provides CSV downloads.</li>
           </ul>
@@ -98,11 +83,6 @@ with right:
         unsafe_allow_html=True,
     )
 
-if remember and st.session_state.api_key:
-    set_query_params(api_key=st.session_state.api_key)
-elif not remember:
-    set_query_params()
-
 
 # ---------- Pipeline ----------
 if submitted:
@@ -110,8 +90,11 @@ if submitted:
         st.error("Dictionary CSV not found (data/torn_item_dictionary.csv)."); st.stop()
     if not raw or not raw.strip():
         st.error("Inventory text is empty."); st.stop()
-    if not st.session_state.api_key.strip():
+    if not api_key.strip():
         st.error("API key required."); st.stop()
+
+    if remember:
+        set_cached_api_key(api_key)
 
     with st.spinner("Cleaning & matching…"):
         dict_map = load_dict(DICT_PATH)
@@ -132,7 +115,7 @@ if submitted:
     with st.spinner("Fetching market data…"):
         sess = session_for_requests()
         bucket = TokenBucket(RATE_LIMIT_PER_MIN)
-        out_rows = [fetch_first10(sess, bucket, st.session_state.api_key, iid, qty) for iid, qty in agg]
+        out_rows = [fetch_first10(sess, bucket, api_key, iid, qty) for iid, qty in agg]
         df_market = pd.DataFrame(out_rows)
         st.success(f"Fetched {len(df_market)} items")
         st.dataframe(df_market.head(30), use_container_width=True)
@@ -177,4 +160,3 @@ if submitted:
             file_name="market_suggestions.csv",
             mime="text/csv"
         )
-
