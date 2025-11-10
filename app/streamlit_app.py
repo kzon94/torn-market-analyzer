@@ -19,6 +19,31 @@ def _api_key_cache():
     return {"value": ""}
 
 
+# ---------- Style ----------
+IMG_HEIGHT_PX = 320
+st.markdown(
+    f"""
+    <style>
+      .tma-panel {{
+        border:1px solid rgba(0,0,0,0.08);
+        border-radius:8px;
+        padding:14px 16px;
+      }}
+      .tma-img {{
+        width:100%;
+        height:{IMG_HEIGHT_PX}px;
+        object-fit:contain;
+        border:1px solid rgba(0,0,0,0.06);
+        border-radius:8px;
+        margin-top:12px;
+        background: #fff;
+      }}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+
 # ---------- Header ----------
 st.markdown(
     "<h1 style='margin-bottom:0.4rem'>Kzon's Torn Market Analyzer</h1>"
@@ -29,55 +54,65 @@ st.markdown(
 left, right = st.columns([1.2, 1], vertical_alignment="top")
 
 with left:
-    with st.form("input_form", clear_on_submit=False):
-        st.write("**Inventory text**")
-        st.caption("Copy everything you see in your inventory window (all lines) and paste it below.")
-        raw = st.text_area(
-            label="Inventory text",
-            height=200,
-            placeholder="Paste your full inventory window text here…",
-            label_visibility="collapsed",
-        )
+    with st.container():
+        st.markdown("<div class='tma-panel'>", unsafe_allow_html=True)
+        with st.form("input_form", clear_on_submit=False):
+            st.write("**Inventory text**")
+            st.caption("Copy everything you see in your inventory window (all lines) and paste it below.")
+            raw = st.text_area(
+                label="Inventory text",
+                height=200,
+                placeholder="Paste your full inventory window text here…",
+                label_visibility="collapsed",
+            )
 
-        cache = _api_key_cache()
-        st.caption("Enter your *public* API key (stored locally in cache).")
-        api_key = st.text_input(
-            label="API key",
-            value=cache.get("value", ""),
-            placeholder="Enter your public API key…",
-            label_visibility="collapsed",
-            key="api_key",
-        )
+            cache = _api_key_cache()
+            st.caption("Enter your *public* API key (stored locally in cache).")
+            api_key = st.text_input(
+                label="API key",
+                value=cache.get("value", ""),
+                placeholder="Enter your public API key…",
+                label_visibility="collapsed",
+                key="api_key",
+            )
 
-        remember = st.checkbox(
-            "Remember API key in cache",
-            value=True,
-            help="Stores your API key locally in cache (not shared).",
-        )
+            remember = st.checkbox(
+                "Remember API key in cache",
+                value=True,
+                help="Stores your API key locally in cache (not shared).",
+            )
 
-        submitted = st.form_submit_button("Run")
+            submitted = st.form_submit_button("Run")
+
+        # Espaciador para igualar la altura total con la imagen de la derecha
+        st.markdown(f"<div style='height:{IMG_HEIGHT_PX}px'></div>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
 with right:
-    st.markdown(
-        """
-        <div style="
-            border:1px solid rgba(0,0,0,0.08);
-            border-radius:8px;
-            padding:14px 16px;
-        ">
-          <h4 style="margin:0 0 0.6rem 0;">What this app does</h4>
-          <ul style="margin:0; padding-left:1.1rem; line-height:1.45;">
-            <li><b>Parses & cleans</b> your pasted inventory text.</li>
-            <li><b>Fuzzy-matches</b> item names against a local dictionary (threshold fixed at 80).</li>
-            <li><b>Queries Torn</b> <code>itemmarket</code> for each matched item using your public API key.</li>
-            <li><b>Stores your API key locally in cache</b> for convenience — not shared anywhere.</li>
-            <li><b>Computes KPIs</b>: min/max price, mean price, depth cost, price spread & volatility.</li>
-            <li><b>Suggests sale prices</b> and provides CSV downloads.</li>
-          </ul>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    with st.container():
+        st.markdown("<div class='tma-panel'>", unsafe_allow_html=True)
+        st.markdown(
+            """
+            <h4 style="margin:0 0 0.6rem 0;">What this app does</h4>
+            <ul style="margin:0; padding-left:1.1rem; line-height:1.45;">
+              <li><b>Parses & cleans</b> your pasted inventory text.</li>
+              <li><b>Fuzzy-matches</b> item names against a local dictionary (threshold fixed at 80).</li>
+              <li><b>Queries Torn</b> <code>itemmarket</code> for each matched item using your public API key.</li>
+              <li><b>Stores your API key locally in cache</b> for convenience — not shared anywhere.</li>
+              <li><b>Computes KPIs</b>: min/max price, mean price, depth cost, price spread & volatility.</li>
+              <li><b>Suggests sale prices</b> and provides CSV downloads.</li>
+            </ul>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        # Imagen colocada debajo de la caja de la derecha (dentro del mismo panel)
+        # Si prefieres fuera del panel, mueve este bloque después del </div>.
+        st.markdown(
+            "<img src='inventory.png' alt='inventory.png' class='tma-img' />",
+            unsafe_allow_html=True,
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ---------- Pipeline ----------
@@ -114,7 +149,6 @@ if submitted:
         out_rows = [fetch_first10(sess, bucket, api_key, iid, qty) for iid, qty in agg]
         df_market = pd.DataFrame(out_rows)
 
-        # Normalize numeric columns for Arrow compatibility
         for i in range(1, 11):
             pcol = f"price_{i}"
             acol = f"amount_{i}"
