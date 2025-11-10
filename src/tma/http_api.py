@@ -48,8 +48,9 @@ def fetch_first10(session, bucket, api_key: str, item_id: int, my_quantity: int)
                     row[f"price_{i}"]  = l.get("price")
                     row[f"amount_{i}"] = l.get("amount")
                 for i in range(len(listings)+1, 11):
-                    row[f"price_{i}"]  = ""
-                    row[f"amount_{i}"] = ""
+                    row[f"price_{i}"]  = None
+                    row[f"amount_{i}"] = None
                 return row
         time.sleep(backoff); backoff *= 1.6
+
     return {"item_id": item_id, "my_quantity": my_quantity, "error": "Exhausted retries"}
