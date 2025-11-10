@@ -13,14 +13,10 @@ from tma.io_utils import to_csv_bytes, apply_display_formatting
 st.set_page_config(page_title="Kzon's Torn Market Analyzer", layout="wide")
 
 
-# ---------- Cache handling ----------
-@st.cache_data(show_spinner=False)
-def get_cached_api_key() -> str:
-    return ""
-
-@st.cache_data(show_spinner=False)
-def set_cached_api_key(value: str):
-    return value
+# ---------- Cache (API key) ----------
+@st.cache_resource(show_spinner=False)
+def _api_key_cache():
+    return {"value": ""}
 
 
 # ---------- Header ----------
@@ -43,11 +39,11 @@ with left:
             label_visibility="collapsed",
         )
 
-        st.caption("Enter your *public* API key (stored locally in cache for your convenience).")
-        cached_key = get_cached_api_key()
+        cache = _api_key_cache()
+        st.caption("Enter your *public* API key (stored locally in cache).")
         api_key = st.text_input(
             label="API key",
-            value=cached_key,
+            value=cache.get("value", ""),
             placeholder="Enter your public API key…",
             label_visibility="collapsed",
             key="api_key",
@@ -56,7 +52,7 @@ with left:
         remember = st.checkbox(
             "Remember API key in cache",
             value=True,
-            help="Stores your API key securely in local cache (never shared).",
+            help="Stores your API key locally in cache (not shared).",
         )
 
         submitted = st.form_submit_button("Run")
@@ -74,7 +70,7 @@ with right:
             <li><b>Parses & cleans</b> your pasted inventory text.</li>
             <li><b>Fuzzy-matches</b> item names against a local dictionary (threshold fixed at 80).</li>
             <li><b>Queries Torn</b> <code>itemmarket</code> for each matched item using your public API key.</li>
-            <li><b>Stores your API key locally in cache</b> for convenience — it is <i>never sent or shared</i>.</li>
+            <li><b>Stores your API key locally in cache</b> for convenience — not shared anywhere.</li>
             <li><b>Computes KPIs</b>: min/max price, mean price, depth cost, price spread & volatility.</li>
             <li><b>Suggests sale prices</b> and provides CSV downloads.</li>
           </ul>
@@ -94,7 +90,7 @@ if submitted:
         st.error("API key required."); st.stop()
 
     if remember:
-        set_cached_api_key(api_key)
+        cache["value"] = api_key
 
     with st.spinner("Cleaning & matching…"):
         dict_map = load_dict(DICT_PATH)
@@ -106,7 +102,7 @@ if submitted:
         wanted_cols = ["input_segment", "normalized_key", "quantity", "id"]
         df_parsed_view = df_clean.reindex(columns=wanted_cols)
         st.success(f"Parsed {len(df_clean)} segments")
-        st.dataframe(df_parsed_view, use_container_width=True)
+        st.dataframe(df_parsed_view, width='stretch')
 
     agg = aggregate_id_quantity(clean_rows)
     if not agg:
@@ -117,8 +113,21 @@ if submitted:
         bucket = TokenBucket(RATE_LIMIT_PER_MIN)
         out_rows = [fetch_first10(sess, bucket, api_key, iid, qty) for iid, qty in agg]
         df_market = pd.DataFrame(out_rows)
+
+        # Normalize numeric columns for Arrow compatibility
+        for i in range(1, 11):
+            pcol = f"price_{i}"
+            acol = f"amount_{i}"
+            if pcol in df_market.columns:
+                df_market[pcol] = pd.to_numeric(df_market[pcol], errors="coerce").astype("Int64")
+            if acol in df_market.columns:
+                df_market[acol] = pd.to_numeric(df_market[acol], errors="coerce").astype("Int64")
+        for c in ["average_price", "my_quantity", "item_id"]:
+            if c in df_market.columns:
+                df_market[c] = pd.to_numeric(df_market[c], errors="coerce").astype("Int64")
+
         st.success(f"Fetched {len(df_market)} items")
-        st.dataframe(df_market.head(30), use_container_width=True)
+        st.dataframe(df_market.head(30), width='stretch')
 
     with st.spinner("Computing KPIs & suggestions…"):
         kpis, sugg = analyze_market(df_market)
@@ -127,13 +136,13 @@ if submitted:
         st.subheader("Market KPIs per item")
         st.dataframe(
             apply_display_formatting(kpis_view).sort_values("item_name").reset_index(drop=True),
-            use_container_width=True
+            width='stretch'
         )
 
         st.subheader("Sale suggestions")
         st.dataframe(
             apply_display_formatting(sugg).sort_values("item_name").reset_index(drop=True),
-            use_container_width=True
+            width='stretch'
         )
 
         st.download_button(
