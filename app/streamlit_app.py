@@ -85,10 +85,10 @@ with right:
             border-radius:8px;
             padding:14px 16px;
         ">
-          <h4 style="margin:0 0 0.6rem 0;">What this app does</h4>
+          <h4 style="margin:0 0 0.6rem 0;">What this app does?</h4>
           <ul style="margin:0; padding-left:1.1rem; line-height:1.45;">
             <li><b>Parses & cleans</b> your pasted inventory text.</li>
-            <li><b>Fuzzy-matches</b> item names against a local dictionary (threshold fixed at 80).</li>
+            <li><b>Fuzzy-matches</b> item names against a local dictionary.</li>
             <li><b>Queries Torn</b> <code>itemmarket</code> for each matched item.</li>
             <li><b>Computes KPIs</b>: min/max price, mean price, depth cost, price spread & volatility.</li>
             <li><b>Suggests sale prices</b> and provides CSV downloads.</li>
@@ -177,3 +177,4 @@ if submitted:
             file_name="market_suggestions.csv",
             mime="text/csv"
         )
+
