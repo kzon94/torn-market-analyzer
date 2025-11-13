@@ -19,28 +19,144 @@ def _api_key_cache():
     return {"value": ""}
 
 
-# ---------- Header ----------
+# ---------- Global styles ----------
 st.markdown(
-    "<h1 style='margin-bottom:0.4rem'>Kzon's Torn Market Analyzer</h1>"
-    "<p style='margin:0 0 1rem 0'>Paste the full text of your Torn Inventory window and enter your <b>public</b> API key.</p>",
+    """
+    <style>
+      .tma-center-container {
+        max-width: 1000px;
+        margin: 0 auto;
+      }
+      .tma-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin-bottom: 0.75rem;
+      }
+      .tma-title-block {
+        display: flex;
+        flex-direction: column;
+        gap: 0.15rem;
+      }
+      .tma-tooltip {
+        position: relative;
+        display: inline-block;
+        cursor: help;
+      }
+      .tma-tooltip-icon {
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        border: 1px solid rgba(0,0,0,0.18);
+        background: rgba(250,250,250,0.95);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+        font-size: 0.85rem;
+        color: #444;
+      }
+      .tma-tooltip-content {
+        visibility: hidden;
+        opacity: 0;
+        width: 360px;
+        max-width: 80vw;
+        background: #111;
+        color: #fff;
+        text-align: left;
+        padding: 10px 12px;
+        border-radius: 8px;
+        position: absolute;
+        z-index: 10;
+        top: 130%;
+        right: 0;
+        font-size: 0.85rem;
+        line-height: 1.4;
+        transition: opacity 0.15s ease-in-out;
+      }
+      .tma-tooltip-content ul {
+        padding-left: 1.1rem;
+        margin: 0.2rem 0 0 0;
+      }
+      .tma-tooltip-content li {
+        margin-bottom: 0.15rem;
+      }
+      .tma-tooltip:hover .tma-tooltip-content {
+        visibility: visible;
+        opacity: 1;
+      }
+      .tma-panel {
+        border: 1px solid rgba(0,0,0,0.08);
+        border-radius: 10px;
+        padding: 16px 18px 18px 18px;
+        background: rgba(255,255,255,0.9);
+      }
+    </style>
+    """,
     unsafe_allow_html=True,
 )
 
-left, right = st.columns([1.2, 1], vertical_alignment="top")
 
-with left:
+# ---------- Layout: center content (3/4 width approx) ----------
+left_spacer, center_col, right_spacer = st.columns([0.5, 3, 0.5])
+
+submitted = False
+raw = ""
+api_key = ""
+remember = True
+cache = _api_key_cache()
+
+with center_col:
+    st.markdown("<div class='tma-center-container'>", unsafe_allow_html=True)
+
+    # Header with title + tooltip
+    st.markdown(
+        """
+        <div class="tma-header">
+          <div class="tma-title-block">
+            <h1 style="margin:0 0 0.15rem 0;">Kzon's Torn Market Analyzer</h1>
+            <p style="margin:0; font-size:0.9rem; color:#555;">
+              Paste your <b>Add Listing</b> items from the Torn Item Market.
+            </p>
+          </div>
+          <div class="tma-tooltip">
+            <div class="tma-tooltip-icon">?</div>
+            <div class="tma-tooltip-content">
+              <div><b>How this app works</b></div>
+              <ul>
+                <li>Copy the list of items from the <i>Add Listing</i> section of the Item Market and paste it here.</li>
+                <li>The app parses item names and quantities, ignoring prices and untradable / equipped items.</li>
+                <li>It calls the Torn <code>itemmarket</code> API with your public key (rate-limited, read-only).</li>
+                <li>It computes market KPIs and suggests listing prices based on the first 20 units and fee structure.</li>
+                <li>Your API key is cached locally for convenience and is not shared anywhere.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown("<div class='tma-panel'>", unsafe_allow_html=True)
+
     with st.form("input_form", clear_on_submit=False):
-        st.write("**Inventory text**")
-        st.caption("Copy everything you see in your inventory window (all lines) and paste it below.")
+        st.write("**Item Market listings**")
+
+        st.markdown(
+            '[Access to your listings](https://www.torn.com/page.php?sid=ItemMarket#/addListing)',
+            unsafe_allow_html=False,
+        )
+
+        st.caption("Copy your full list of items from the Add Listing page and paste it below.")
         raw = st.text_area(
-            label="Inventory text",
-            height=200,
-            placeholder="Paste your full inventory window text here…",
+            label="Listings text",
+            height=220,
+            placeholder="Paste your full Add Listing items text here…",
             label_visibility="collapsed",
         )
 
-        cache = _api_key_cache()
-        st.caption("Enter your *public* API key (stored locally in cache).")
+        st.caption("Enter your *public* Torn API key (stored locally in cache).")
         api_key = st.text_input(
             label="API key",
             value=cache.get("value", ""),
@@ -57,37 +173,21 @@ with left:
 
         submitted = st.form_submit_button("Run")
 
-with right:
-    st.markdown(
-        """
-        <div style="
-            border:1px solid rgba(0,0,0,0.08);
-            border-radius:8px;
-            padding:14px 16px;
-        ">
-          <h4 style="margin:0 0 0.6rem 0;">What this app does</h4>
-          <ul style="margin:0; padding-left:1.1rem; line-height:1.45;">
-            <li><b>Parses & cleans</b> your pasted inventory text.</li>
-            <li><b>Fuzzy-matches</b> item names against a local dictionary (threshold fixed at 80).</li>
-            <li><b>Queries Torn</b> <code>itemmarket</code> for each matched item using your public API key.</li>
-            <li><b>Stores your API key locally in cache</b> for convenience — not shared anywhere.</li>
-            <li><b>Computes KPIs</b>: min/max price, mean price, depth cost, price spread & volatility.</li>
-            <li><b>Suggests sale prices</b> and provides CSV downloads.</li>
-          </ul>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ---------- Pipeline ----------
 if submitted:
     if not DICT_PATH.exists():
-        st.error("Dictionary CSV not found (data/torn_item_dictionary.csv)."); st.stop()
+        st.error("Dictionary CSV not found (data/torn_item_dictionary.csv).")
+        st.stop()
     if not raw or not raw.strip():
-        st.error("Inventory text is empty."); st.stop()
+        st.error("Listings text is empty.")
+        st.stop()
     if not api_key.strip():
-        st.error("API key required."); st.stop()
+        st.error("API key required.")
+        st.stop()
 
     if remember:
         cache["value"] = api_key
@@ -97,16 +197,18 @@ if submitted:
         clean_rows = clean_and_match_from_raw(raw, dict_map, threshold=FUZZY_THRESHOLD)
         df_clean = pd.DataFrame(clean_rows)
         if df_clean.empty:
-            st.warning("No matches found."); st.stop()
+            st.warning("No matches found.")
+            st.stop()
 
         wanted_cols = ["input_segment", "normalized_key", "quantity", "id"]
         df_parsed_view = df_clean.reindex(columns=wanted_cols)
         st.success(f"Parsed {len(df_clean)} segments")
-        st.dataframe(df_parsed_view, width='stretch')
+        st.dataframe(df_parsed_view, width="stretch")
 
     agg = aggregate_id_quantity(clean_rows)
     if not agg:
-        st.warning("No valid item IDs after cleaning."); st.stop()
+        st.warning("No valid item IDs after cleaning.")
+        st.stop()
 
     with st.spinner("Fetching market data…"):
         sess = session_for_requests()
@@ -114,7 +216,6 @@ if submitted:
         out_rows = [fetch_first10(sess, bucket, api_key, iid, qty) for iid, qty in agg]
         df_market = pd.DataFrame(out_rows)
 
-        # Normalize numeric columns for Arrow compatibility
         for i in range(1, 11):
             pcol = f"price_{i}"
             acol = f"amount_{i}"
@@ -127,7 +228,7 @@ if submitted:
                 df_market[c] = pd.to_numeric(df_market[c], errors="coerce").astype("Int64")
 
         st.success(f"Fetched {len(df_market)} items")
-        st.dataframe(df_market.head(30), width='stretch')
+        st.dataframe(df_market.head(30), width="stretch")
 
     with st.spinner("Computing KPIs & suggestions…"):
         kpis, sugg = analyze_market(df_market)
@@ -136,36 +237,36 @@ if submitted:
         st.subheader("Market KPIs per item")
         st.dataframe(
             apply_display_formatting(kpis_view).sort_values("item_name").reset_index(drop=True),
-            width='stretch'
+            width="stretch",
         )
 
         st.subheader("Sale suggestions")
         st.dataframe(
             apply_display_formatting(sugg).sort_values("item_name").reset_index(drop=True),
-            width='stretch'
+            width="stretch",
         )
 
         st.download_button(
             "Download clean_data_id.csv",
             data=to_csv_bytes(df_clean),
             file_name="clean_data_id.csv",
-            mime="text/csv"
+            mime="text/csv",
         )
         st.download_button(
             "Download market_list.csv",
             data=to_csv_bytes(df_market),
             file_name="market_list.csv",
-            mime="text/csv"
+            mime="text/csv",
         )
         st.download_button(
             "Download market_kpis.csv",
             data=to_csv_bytes(kpis),
             file_name="market_kpis.csv",
-            mime="text/csv"
+            mime="text/csv",
         )
         st.download_button(
             "Download market_suggestions.csv",
             data=to_csv_bytes(sugg),
             file_name="market_suggestions.csv",
-            mime="text/csv"
+            mime="text/csv",
         )
