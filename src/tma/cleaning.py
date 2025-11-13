@@ -1,24 +1,15 @@
-# tma/cleaning.py
-
 import re
 import unicodedata
 from html import unescape
 from typing import List, Optional
 
-
-ACTION_FRAGMENTS = [
-    "Unequip this Item", "Equip this Item", "Return to Faction", "Send this Item",
-    "Take this Item", "Trash this Item", "Donate this Item", "Open this Item",
-    "Turn on this Item", "Use this Item",
-]
-
-ACTION_RX = re.compile("|".join(re.escape(a) for a in ACTION_FRAGMENTS), flags=re.I)
 QTY_RX = re.compile(r'\bx(\d+)\b', flags=re.I)
 FLOAT_RX = re.compile(r'\b\d+\.\d+\b')
 STANDALONE_INT_RX = re.compile(r'(?<=\s)\d+(?=\s)')
 LOWER_UPPER_RX = re.compile(r'([a-z])([A-Z])')
 
 
+# --- Utility: remove accents ---
 def strip_accents(s: str) -> str:
     return ''.join(
         c for c in unicodedata.normalize('NFD', s)
@@ -26,6 +17,7 @@ def strip_accents(s: str) -> str:
     )
 
 
+# --- Utility: normalize name into a safe key ---
 def to_key(name: str) -> str:
     s = unescape(name or "").strip().lower()
     s = strip_accents(s)
@@ -38,25 +30,20 @@ def split_lower_upper(s: str) -> str:
     return LOWER_UPPER_RX.sub(r'\1 \2', s)
 
 
+# --- MAIN: Parse Torn Market listing text into item segments ---
 def split_raw_into_segments(raw_text: str) -> List[str]:
     """
-    Split raw inventory/market text into logical item segments.
-
-    Soporta:
-      - Formato antiguo del inventario (con acciones "Equip this Item", etc.).
-      - Formato de market listing con bloques:
-        Nombre
-        $precio
-        RRP
-        Make my listing of ...
-        Qty
-        Price
-        (más posibles 'Equipped', 'Untradable', y cantidades sueltas xN).
+    Parse structured Torn market listing text into clean item segments.
+    - Extracts item names
+    - Captures quantities (xN)
+    - Skips Equipped / Untradable items
+    - Ignores RRP, prices, Qty/Price headings, and system lines
     """
-    # Parser línea a línea para formato de market listing
     lines = [l.strip() for l in raw_text.splitlines()]
     segments: List[str] = []
-    current: Optional[str] = None
+    current_name: Optional[str] = None
+    current_qty: Optional[int] = None
+    skip_current_item = False
 
     for line in lines:
         if not line:
@@ -64,57 +51,71 @@ def split_raw_into_segments(raw_text: str) -> List[str]:
 
         low = line.lower()
 
-        # Ruido fijo del nuevo formato
-        if low in {"rrp", "qty", "price", "equipped", "untradable"}:
-            continue
-        if low.startswith("make my listing of"):
+        # Recognize and mark items that must be excluded
+        if low in {"equipped", "untradable"}:
+            skip_current_item = True
             continue
 
-        # Líneas de precio tipo "$10,430,546" → ignorar
+        # Ignore noise phrases
+        if low in {"rrp", "qty", "price"}:
+            continue
+        if low == "n/a":
+            continue
+
+        # Ignore price lines like "$12,345"
         if line.startswith("$"):
             compact = line.replace(" ", "")
             if re.fullmatch(r"\$\s*\d[\d,\.]*", compact):
                 continue
 
-        # Cantidad aislada tipo "x5", "x 27", etc. → se asocia al último ítem
+        # Quantity line "x5", "x27"...
         m_qty = re.fullmatch(r"x\s*(\d+)", low)
-        if m_qty and current is not None:
-            qty = m_qty.group(1)
-            current = f"{current} x{qty}"
+        if m_qty and current_name is not None:
+            current_qty = int(m_qty.group(1))
             continue
 
-        # Si llega aquí, no es ruido ni precio ni cantidad aislada → nombre de ítem nuevo
-        if current:
-            segments.append(current)
-        current = line
+        # Close item block when hitting the listing-action line
+        if low.startswith("make my listing of"):
+            if current_name and not skip_current_item:
+                if current_qty is not None:
+                    segments.append(f"{current_name} x{current_qty}")
+                else:
+                    segments.append(current_name)
 
-    if current:
-        segments.append(current)
+            current_name = None
+            current_qty = None
+            skip_current_item = False
+            continue
 
-    # Si el enfoque de listings ha producido algo, lo usamos
-    if segments:
-        return segments
+        # New item name
+        current_name = line
+        current_qty = None
+        skip_current_item = False
 
-    # Fallback: comportamiento antiguo (inventario clásico con acciones)
-    s = split_lower_upper(raw_text)
-    s = ACTION_RX.sub("|", s)
-    s = s.replace("|", " | ")
-    s = re.sub(r'\s+', ' ', s).strip()
-    parts = [p.strip() for p in s.split("|")]
-    return [p for p in parts if p]
+    # Safety: finalize last item if needed
+    if current_name and not skip_current_item:
+        if current_qty is not None:
+            segments.append(f"{current_name} x{current_qty}")
+        else:
+            segments.append(current_name)
+
+    return segments
 
 
+# --- Extract quantity "xN" ---
 def extract_quantity(text: str) -> Optional[int]:
     m = QTY_RX.search(text)
     return int(m.group(1)) if m else None
 
 
+# --- Keep only the cleaned name ---
 def drop_color_prefix(text: str) -> str:
     s = text.strip()
     m = re.match(r'^(yellow|orange)([\s\-_]*)(.*)$', s, flags=re.I)
     return (m.group(3).strip() if m else s)
 
 
+# --- Clean noise while keeping a usable item name ---
 def strip_noise_keep_name(text: str) -> str:
     text = QTY_RX.sub(" ", text)
     text = FLOAT_RX.sub(" ", text)
