@@ -24,7 +24,7 @@ st.markdown(
     """
     <style>
       .tma-center-container {
-        max-width: 750px;           /* ~50% of screen */
+        max-width: 750px;
         margin: 0 auto;
       }
       .tma-header {
@@ -98,8 +98,8 @@ st.markdown(
 )
 
 
-# ---------- Layout: center content (~50% width) ----------
-left_spacer, center_col, right_spacer = st.columns([1, 2, 1])
+# ---------- Layout: center content (3/4 width approx) ----------
+left_spacer, center_col, right_spacer = st.columns([1, 3, 1])
 
 submitted = False
 raw = ""
@@ -108,75 +108,74 @@ remember = True
 cache = _api_key_cache()
 
 with center_col:
-    with st.container():
-        st.markdown("<div class='tma-center-container'>", unsafe_allow_html=True)
+    st.markdown("<div class='tma-center-container'>", unsafe_allow_html=True)
 
-        # Header limpio sin crear bloques fantasma
-        st.markdown(
-            """
-            <div class="tma-header">
-              <div class="tma-title-block">
-                <div style="font-size: 2rem; font-weight: 700; margin-bottom: 0.1rem;">
-                    Kzon's Torn Market Analyzer
-                </div>
-              </div>
-
-              <div style="display:flex; align-items:center; gap:0.4rem;">
-                <span style="font-size:0.92rem; color:#333;">See how I work:</span>
-                <div class="tma-tooltip">
-                  <div class="tma-tooltip-icon">?</div>
-                  <div class="tma-tooltip-content">
-                    <div><b>How this app works</b></div>
-                    <ul>
-                      <li>Copy the list of items from the <i>Add Listing</i> section of the Item Market and paste it here.</li>
-                      <li>The app parses item names and quantities, ignoring prices and untradable / equipped items.</li>
-                      <li>It calls the Torn <code>itemmarket</code> API with your public key (rate-limited, read-only).</li>
-                      <li>It computes market KPIs and suggests listing prices based on the first 20 units and fee structure.</li>
-                      <li>Your API key is cached locally for convenience and is not shared anywhere.</li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
+    # Header with title + tooltip
+    st.markdown(
+        """
+        <div class="tma-header">
+          <div class="tma-title-block">
+            <h1 style="margin:0 0 0.15rem 0;">Kzon's Torn Market Analyzer</h1>
+            <p style="margin:0; font-size:0.9rem; color:#555;">
+              Paste your <b>Add Listing</b> items from the Torn Item Market.
+            </p>
+          </div>
+          <div class="tma-tooltip">
+            <div class="tma-tooltip-icon">?</div>
+            <div class="tma-tooltip-content">
+              <div><b>How this app works</b></div>
+              <ul>
+                <li>Copy the list of items from the <i>Add Listing</i> section of the Item Market and paste it here.</li>
+                <li>The app parses item names and quantities, ignoring prices and untradable / equipped items.</li>
+                <li>It calls the Torn <code>itemmarket</code> API with your public key (rate-limited, read-only).</li>
+                <li>It computes market KPIs and suggests listing prices based on the first 20 units and fee structure.</li>
+                <li>Your API key is cached locally for convenience and is not shared anywhere.</li>
+              </ul>
             </div>
-            """,
-            unsafe_allow_html=True,
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown("<div class='tma-panel'>", unsafe_allow_html=True)
+
+    with st.form("input_form", clear_on_submit=False):
+        st.write("**Item Market listings**")
+
+        st.markdown(
+            '[Access to your listings](https://www.torn.com/page.php?sid=ItemMarket#/addListing)',
+            unsafe_allow_html=False,
         )
 
-        st.markdown("<div class='tma-panel'>", unsafe_allow_html=True)
+        st.caption("Copy your full list of items from the Add Listing page and paste it below.")
+        raw = st.text_area(
+            label="Listings text",
+            height=220,
+            placeholder="Paste your full Add Listing items text here…",
+            label_visibility="collapsed",
+        )
 
-        # FORMULARIO
-        with st.form("input_form"):
-            st.write("**Item Market listings**")
+        st.caption("Enter your *public* Torn API key (stored locally in cache).")
+        api_key = st.text_input(
+            label="API key",
+            value=cache.get("value", ""),
+            placeholder="Enter your public API key…",
+            label_visibility="collapsed",
+            key="api_key",
+        )
 
-            st.markdown(
-                '[Quick access to your items](https://www.torn.com/page.php?sid=ItemMarket#/addListing)',
-                unsafe_allow_html=False,
-            )
+        remember = st.checkbox(
+            "Remember API key in cache",
+            value=True,
+            help="Stores your API key locally in cache (not shared).",
+        )
 
-            raw = st.text_area(
-                placeholder="Paste your full Add Listing items text here…",
-                label="Listings text",
-                height=220,
-                label_visibility="collapsed"
-            )
+        submitted = st.form_submit_button("Run")
 
-            api_key = st.text_input(
-                placeholder="Enter your public API key…",
-                label="API key",
-                value=cache.get("value", ""),
-                label_visibility="collapsed",
-                key="api_key"
-            )
+    st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-            remember = st.checkbox(
-                "Remember API key in cache",
-                value=True,
-                help="Stores your API key locally in cache (not shared).",
-            )
-
-            submitted = st.form_submit_button("Run")
-
-        st.markdown("</div></div>", unsafe_allow_html=True)
 
 # ---------- Pipeline ----------
 if submitted:
@@ -197,7 +196,7 @@ if submitted:
         dict_map = load_dict(DICT_PATH)
         clean_rows = clean_and_match_from_raw(raw, dict_map, threshold=FUZZY_THRESHOLD)
         df_clean = pd.DataFrame(clean_rows)
-        if df_clean.empty():
+        if df_clean.empty:
             st.warning("No matches found.")
             st.stop()
 
@@ -271,6 +270,3 @@ if submitted:
             file_name="market_suggestions.csv",
             mime="text/csv",
         )
-
-
-
