@@ -24,20 +24,15 @@ st.markdown(
     """
     <style>
       .tma-center-container {
-        max-width: 750px;   /* ~50% of screen on desktops */
+        max-width: 1000px;
         margin: 0 auto;
       }
       .tma-header {
         display: flex;
         align-items: center;
         justify-content: space-between;
+        gap: 0.75rem;
         margin-bottom: 0.75rem;
-        flex-wrap: nowrap;
-      }
-      .tma-left-block {
-        display: flex;
-        align-items: center;
-        gap: 0.45rem;
       }
       .tma-title-block {
         display: flex;
@@ -75,14 +70,14 @@ st.markdown(
         position: absolute;
         z-index: 10;
         top: 130%;
-        left: -10px;
+        right: 0;
         font-size: 0.85rem;
         line-height: 1.4;
         transition: opacity 0.15s ease-in-out;
       }
       .tma-tooltip-content ul {
         padding-left: 1.1rem;
-        margin: 0.25rem 0 0 0;
+        margin: 0.2rem 0 0 0;
       }
       .tma-tooltip-content li {
         margin-bottom: 0.15rem;
@@ -103,55 +98,46 @@ st.markdown(
 )
 
 
-# ---------- Layout: center content (~50% width) ----------
-left_spacer, center_col, right_spacer = st.columns([1, 2, 1])
+# ---------- Layout: center content (3/4 width approx) ----------
+left_spacer, center_col, right_spacer = st.columns([0.5, 3, 0.5])
 
+submitted = False
+raw = ""
+api_key = ""
+remember = True
 cache = _api_key_cache()
 
 with center_col:
     st.markdown("<div class='tma-center-container'>", unsafe_allow_html=True)
 
-    # Header with title + “How it works?” + tooltip
+    # Header with title + tooltip
     st.markdown(
         """
         <div class="tma-header">
-
           <div class="tma-title-block">
             <h1 style="margin:0 0 0.15rem 0;">Kzon's Torn Market Analyzer</h1>
             <p style="margin:0; font-size:0.9rem; color:#555;">
               Paste your <b>Add Listing</b> items from the Torn Item Market.
             </p>
           </div>
-
-          <div class="tma-left-block">
-
-            <span style="font-size:0.92rem; color:#333; font-weight:500;">
-              How it works?
-            </span>
-
-            <div class="tma-tooltip">
-              <div class="tma-tooltip-icon">?</div>
-              <div class="tma-tooltip-content">
-                <div><b>How this app works</b></div>
-                <ul>
-                  <li>Go to the <i>Add Listing</i> page of the Item Market and copy the full list of items.</li>
-                  <li>Paste that text here: the app parses item names and quantities, skipping equipped/untradable items.</li>
-                  <li>It calls the Torn <code>itemmarket</code> API using your public API key (read-only, rate-limited).</li>
-                  <li>It builds market KPIs: min/max prices, weighted means, depth costs and price volatility.</li>
-                  <li>It suggests sale prices based on the first 20 units and the 5% market fee.</li>
-                  <li>Your API key is cached locally for convenience and never shared anywhere.</li>
-                </ul>
-              </div>
+          <div class="tma-tooltip">
+            <div class="tma-tooltip-icon">?</div>
+            <div class="tma-tooltip-content">
+              <div><b>How this app works</b></div>
+              <ul>
+                <li>Copy the list of items from the <i>Add Listing</i> section of the Item Market and paste it here.</li>
+                <li>The app parses item names and quantities, ignoring prices and untradable / equipped items.</li>
+                <li>It calls the Torn <code>itemmarket</code> API with your public key (rate-limited, read-only).</li>
+                <li>It computes market KPIs and suggests listing prices based on the first 20 units and fee structure.</li>
+                <li>Your API key is cached locally for convenience and is not shared anywhere.</li>
+              </ul>
             </div>
-
           </div>
-
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    # Input panel
     st.markdown("<div class='tma-panel'>", unsafe_allow_html=True)
 
     with st.form("input_form", clear_on_submit=False):
@@ -188,105 +174,99 @@ with center_col:
         submitted = st.form_submit_button("Run")
 
     st.markdown("</div>", unsafe_allow_html=True)
-
-    # ---------- Pipeline ----------
-    if submitted:
-        if not DICT_PATH.exists():
-            st.error("Dictionary CSV not found (data/torn_item_dictionary.csv).")
-            st.markdown("</div>", unsafe_allow_html=True)
-            st.stop()
-        if not raw or not raw.strip():
-            st.error("Listings text is empty.")
-            st.markdown("</div>", unsafe_allow_html=True)
-            st.stop()
-        if not api_key.strip():
-            st.error("API key required.")
-            st.markdown("</div>", unsafe_allow_html=True)
-            st.stop()
-
-        if remember:
-            cache["value"] = api_key
-
-        with st.spinner("Cleaning & matching…"):
-            dict_map = load_dict(DICT_PATH)
-            clean_rows = clean_and_match_from_raw(raw, dict_map, threshold=FUZZY_THRESHOLD)
-            df_clean = pd.DataFrame(clean_rows)
-            if df_clean.empty:
-                st.warning("No matches found.")
-                st.markdown("</div>", unsafe_allow_html=True)
-                st.stop()
-
-            wanted_cols = ["input_segment", "normalized_key", "quantity", "id"]
-            df_parsed_view = df_clean.reindex(columns=wanted_cols)
-            st.success(f"Parsed {len(df_clean)} segments")
-            st.dataframe(df_parsed_view, width="stretch")
-
-        agg = aggregate_id_quantity(clean_rows)
-        if not agg:
-            st.warning("No valid item IDs after cleaning.")
-            st.markdown("</div>", unsafe_allow_html=True)
-            st.stop()
-
-        with st.spinner("Fetching market data…"):
-            sess = session_for_requests()
-            bucket = TokenBucket(RATE_LIMIT_PER_MIN)
-            out_rows = [fetch_first10(sess, bucket, api_key, iid, qty) for iid, qty in agg]
-            df_market = pd.DataFrame(out_rows)
-
-            # Normalize numeric columns for Arrow compatibility
-            for i in range(1, 11):
-                pcol = f"price_{i}"
-                acol = f"amount_{i}"
-                if pcol in df_market.columns:
-                    df_market[pcol] = pd.to_numeric(df_market[pcol], errors="coerce").astype("Int64")
-                if acol in df_market.columns:
-                    df_market[acol] = pd.to_numeric(df_market[acol], errors="coerce").astype("Int64")
-            for c in ["average_price", "my_quantity", "item_id"]:
-                if c in df_market.columns:
-                    df_market[c] = pd.to_numeric(df_market[c], errors="coerce").astype("Int64")
-
-            st.success(f"Fetched {len(df_market)} items")
-            st.dataframe(df_market.head(30), width="stretch")
-
-        with st.spinner("Computing KPIs & suggestions…"):
-            kpis, sugg = analyze_market(df_market)
-            kpis_view = kpis.drop(columns=["item_type", "units_used_for_20u"], errors="ignore")
-
-            st.subheader("Market KPIs per item")
-            st.dataframe(
-                apply_display_formatting(kpis_view).sort_values("item_name").reset_index(drop=True),
-                width="stretch",
-            )
-
-            st.subheader("Sale suggestions")
-            st.dataframe(
-                apply_display_formatting(sugg).sort_values("item_name").reset_index(drop=True),
-                width="stretch",
-            )
-
-            st.download_button(
-                "Download clean_data_id.csv",
-                data=to_csv_bytes(df_clean),
-                file_name="clean_data_id.csv",
-                mime="text/csv",
-            )
-            st.download_button(
-                "Download market_list.csv",
-                data=to_csv_bytes(df_market),
-                file_name="market_list.csv",
-                mime="text/csv",
-            )
-            st.download_button(
-                "Download market_kpis.csv",
-                data=to_csv_bytes(kpis),
-                file_name="market_kpis.csv",
-                mime="text/csv",
-            )
-            st.download_button(
-                "Download market_suggestions.csv",
-                data=to_csv_bytes(sugg),
-                file_name="market_suggestions.csv",
-                mime="text/csv",
-            )
-
     st.markdown("</div>", unsafe_allow_html=True)
+
+
+# ---------- Pipeline ----------
+if submitted:
+    if not DICT_PATH.exists():
+        st.error("Dictionary CSV not found (data/torn_item_dictionary.csv).")
+        st.stop()
+    if not raw or not raw.strip():
+        st.error("Listings text is empty.")
+        st.stop()
+    if not api_key.strip():
+        st.error("API key required.")
+        st.stop()
+
+    if remember:
+        cache["value"] = api_key
+
+    with st.spinner("Cleaning & matching…"):
+        dict_map = load_dict(DICT_PATH)
+        clean_rows = clean_and_match_from_raw(raw, dict_map, threshold=FUZZY_THRESHOLD)
+        df_clean = pd.DataFrame(clean_rows)
+        if df_clean.empty:
+            st.warning("No matches found.")
+            st.stop()
+
+        wanted_cols = ["input_segment", "normalized_key", "quantity", "id"]
+        df_parsed_view = df_clean.reindex(columns=wanted_cols)
+        st.success(f"Parsed {len(df_clean)} segments")
+        st.dataframe(df_parsed_view, width="stretch")
+
+    agg = aggregate_id_quantity(clean_rows)
+    if not agg:
+        st.warning("No valid item IDs after cleaning.")
+        st.stop()
+
+    with st.spinner("Fetching market data…"):
+        sess = session_for_requests()
+        bucket = TokenBucket(RATE_LIMIT_PER_MIN)
+        out_rows = [fetch_first10(sess, bucket, api_key, iid, qty) for iid, qty in agg]
+        df_market = pd.DataFrame(out_rows)
+
+        for i in range(1, 11):
+            pcol = f"price_{i}"
+            acol = f"amount_{i}"
+            if pcol in df_market.columns:
+                df_market[pcol] = pd.to_numeric(df_market[pcol], errors="coerce").astype("Int64")
+            if acol in df_market.columns:
+                df_market[acol] = pd.to_numeric(df_market[acol], errors="coerce").astype("Int64")
+        for c in ["average_price", "my_quantity", "item_id"]:
+            if c in df_market.columns:
+                df_market[c] = pd.to_numeric(df_market[c], errors="coerce").astype("Int64")
+
+        st.success(f"Fetched {len(df_market)} items")
+        st.dataframe(df_market.head(30), width="stretch")
+
+    with st.spinner("Computing KPIs & suggestions…"):
+        kpis, sugg = analyze_market(df_market)
+        kpis_view = kpis.drop(columns=["item_type", "units_used_for_20u"], errors="ignore")
+
+        st.subheader("Market KPIs per item")
+        st.dataframe(
+            apply_display_formatting(kpis_view).sort_values("item_name").reset_index(drop=True),
+            width="stretch",
+        )
+
+        st.subheader("Sale suggestions")
+        st.dataframe(
+            apply_display_formatting(sugg).sort_values("item_name").reset_index(drop=True),
+            width="stretch",
+        )
+
+        st.download_button(
+            "Download clean_data_id.csv",
+            data=to_csv_bytes(df_clean),
+            file_name="clean_data_id.csv",
+            mime="text/csv",
+        )
+        st.download_button(
+            "Download market_list.csv",
+            data=to_csv_bytes(df_market),
+            file_name="market_list.csv",
+            mime="text/csv",
+        )
+        st.download_button(
+            "Download market_kpis.csv",
+            data=to_csv_bytes(kpis),
+            file_name="market_kpis.csv",
+            mime="text/csv",
+        )
+        st.download_button(
+            "Download market_suggestions.csv",
+            data=to_csv_bytes(sugg),
+            file_name="market_suggestions.csv",
+            mime="text/csv",
+        )
