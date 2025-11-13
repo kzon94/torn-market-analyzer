@@ -116,9 +116,6 @@ with center_col:
         <div class="tma-header">
           <div class="tma-title-block">
             <h1 style="margin:0 0 0.15rem 0;">Kzon's Torn Market Analyzer</h1>
-            <p style="margin:0; font-size:0.9rem; color:#555;">
-              Paste your <b>Add Listing</b> items from the Torn Item Market.
-            </p>
           </div>
 
           <div style="display:flex; align-items:center; gap:0.4rem;">
@@ -272,4 +269,5 @@ if submitted:
             file_name="market_suggestions.csv",
             mime="text/csv",
         )
+
 
