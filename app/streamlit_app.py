@@ -10,7 +10,7 @@ from tma.io_utils import to_csv_bytes, apply_display_formatting
 
 
 # ---------- App config ----------
-st.set_page_config(page_title="Kzon's Torn Market Analyzer", layout="wide")
+st.set_page_config(page_title="Kzon's Torn Market Analyzer", layout="centered")
 
 
 # ---------- Cache (API key) ----------
@@ -19,146 +19,62 @@ def _api_key_cache():
     return {"value": ""}
 
 
-# ---------- Global styles ----------
+# ---------- Global styles (solo centrar) ----------
 st.markdown(
     """
     <style>
-      /* Centramos TODO el contenido de la app */
       .block-container {
-        max-width: 1000px;
+        max-width: 900px;
         margin: 0 auto;
-      }
-
-      .tma-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 0.75rem;
-        margin-bottom: 0.75rem;
-      }
-      .tma-title-block {
-        display: flex;
-        flex-direction: column;
-        gap: 0.15rem;
-      }
-      .tma-tooltip {
-        position: relative;
-        display: inline-block;
-        cursor: help;
-      }
-      .tma-tooltip-icon {
-        width: 22px;
-        height: 22px;
-        border-radius: 50%;
-        border: 1px solid rgba(0,0,0,0.18);
-        background: rgba(250,250,250,0.95);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: 600;
-        font-size: 0.85rem;
-        color: #444;
-      }
-      .tma-tooltip-content {
-        visibility: hidden;
-        opacity: 0;
-        width: 360px;
-        max-width: 80vw;
-        background: #111;
-        color: #fff;
-        text-align: left;
-        padding: 10px 12px;
-        border-radius: 8px;
-        position: absolute;
-        z-index: 10;
-        top: 130%;
-        right: 0;
-        font-size: 0.85rem;
-        line-height: 1.4;
-        transition: opacity 0.15s ease-in-out;
-      }
-      .tma-tooltip-content ul {
-        padding-left: 1.1rem;
-        margin: 0.2rem 0 0 0;
-      }
-      .tma-tooltip-content li {
-        margin-bottom: 0.15rem;
-      }
-      .tma-tooltip:hover .tma-tooltip-content {
-        visibility: visible;
-        opacity: 1;
-      }
-      .tma-panel {
-        border: 1px solid rgba(0,0,0,0.08);
-        border-radius: 10px;
-        padding: 16px 18px 18px 18px;
-        background: rgba(255,255,255,0.9);
+        padding-top: 2rem;
       }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-# ---------- Layout: ya no necesitamos columnas de relleno ----------
+
+# ---------- Header ----------
+st.title("Kzon's Torn Market Analyzer")
+st.caption("Paste your Add Listing items from the Torn Item Market.")
+
+with st.expander("How this app works", icon="❓"):
+    st.markdown(
+        """
+        - Copy the list of items from the **Add Listing** section of the Item Market.
+        - Paste it in the text box below; prices and untradable/equipped items are ignored.
+        - The app calls the Torn `itemmarket` API with your **public** key (read-only, rate-limited).
+        - It computes market KPIs and suggests listing prices based on the first 20 units.
+        - Your API key is cached locally for convenience and is **not** shared anywhere.
+        """
+    )
+
+cache = _api_key_cache()
 submitted = False
 raw = ""
 api_key = ""
 remember = True
-cache = _api_key_cache()
 
-# Contenido directo (todo ya centrado por .block-container)
-st.markdown(
-    """
-    <div class="tma-header">
-      <div class="tma-title-block">
-        <h1 style="margin:0 0 0.15rem 0;">Kzon's Torn Market Analyzer</h1>
-        <p style="margin:0; font-size:0.9rem; color:#555;">
-          Paste your <b>Add Listing</b> items from the Torn Item Market.
-        </p>
-      </div>
-      <div class="tma-tooltip">
-        <div class="tma-tooltip-icon">?</div>
-        <div class="tma-tooltip-content">
-          <div><b>How this app works</b></div>
-          <ul>
-            <li>Copy the list of items from the <i>Add Listing</i> section of the Item Market and paste it here.</li>
-            <li>The app parses item names and quantities, ignoring prices and untradable / equipped items.</li>
-            <li>It calls the Torn <code>itemmarket</code> API with your public key (rate-limited, read-only).</li>
-            <li>It computes market KPIs and suggests listing prices based on the first 20 units and fee structure.</li>
-            <li>Your API key is cached locally for convenience and is not shared anywhere.</li>
-          </ul>
-        </div>
-      </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
 
-st.markdown("<div class='tma-panel'>", unsafe_allow_html=True)
-
+# ---------- Input form ----------
 with st.form("input_form", clear_on_submit=False):
-    st.write("**Item Market listings**")
+    st.subheader("Item Market listings")
 
     st.markdown(
-        '[Access to your listings](https://www.torn.com/page.php?sid=ItemMarket#/addListing)',
+        "[Access to your listings](https://www.torn.com/page.php?sid=ItemMarket#/addListing)",
         unsafe_allow_html=False,
     )
 
     st.caption("Copy your full list of items from the Add Listing page and paste it below.")
     raw = st.text_area(
-        label="Listings text",
+        "Listings text",
         height=220,
         placeholder="Paste your full Add Listing items text here…",
-        label_visibility="collapsed",
     )
 
-    st.caption("Enter your *public* Torn API key (stored locally in cache).")
     api_key = st.text_input(
-        label="API key",
+        "Enter your public Torn API key…",
         value=cache.get("value", ""),
-        placeholder="Enter your public API key…",
-        label_visibility="collapsed",
-        key="api_key",
     )
 
     remember = st.checkbox(
@@ -168,8 +84,6 @@ with st.form("input_form", clear_on_submit=False):
     )
 
     submitted = st.form_submit_button("Run")
-
-st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ---------- Pipeline ----------
@@ -187,6 +101,7 @@ if submitted:
     if remember:
         cache["value"] = api_key
 
+    # 1) Cleaning & matching
     with st.spinner("Cleaning & matching…"):
         dict_map = load_dict(DICT_PATH)
         clean_rows = clean_and_match_from_raw(raw, dict_map, threshold=FUZZY_THRESHOLD)
@@ -198,13 +113,15 @@ if submitted:
         wanted_cols = ["input_segment", "normalized_key", "quantity", "id"]
         df_parsed_view = df_clean.reindex(columns=wanted_cols)
         st.success(f"Parsed {len(df_clean)} segments")
-        st.dataframe(df_parsed_view, width="stretch")
+        st.dataframe(df_parsed_view, use_container_width=True)
 
+    # 2) Aggregate quantities
     agg = aggregate_id_quantity(clean_rows)
     if not agg:
         st.warning("No valid item IDs after cleaning.")
         st.stop()
 
+    # 3) Fetch market data
     with st.spinner("Fetching market data…"):
         sess = session_for_requests()
         bucket = TokenBucket(RATE_LIMIT_PER_MIN)
@@ -223,8 +140,9 @@ if submitted:
                 df_market[c] = pd.to_numeric(df_market[c], errors="coerce").astype("Int64")
 
         st.success(f"Fetched {len(df_market)} items")
-        st.dataframe(df_market.head(30), width="stretch")
+        st.dataframe(df_market.head(30), use_container_width=True)
 
+    # 4) KPIs & suggestions
     with st.spinner("Computing KPIs & suggestions…"):
         kpis, sugg = analyze_market(df_market)
         kpis_view = kpis.drop(columns=["item_type", "units_used_for_20u"], errors="ignore")
@@ -232,13 +150,13 @@ if submitted:
         st.subheader("Market KPIs per item")
         st.dataframe(
             apply_display_formatting(kpis_view).sort_values("item_name").reset_index(drop=True),
-            width="stretch",
+            use_container_width=True,
         )
 
         st.subheader("Sale suggestions")
         st.dataframe(
             apply_display_formatting(sugg).sort_values("item_name").reset_index(drop=True),
-            width="stretch",
+            use_container_width=True,
         )
 
         st.download_button(
@@ -265,4 +183,3 @@ if submitted:
             file_name="market_suggestions.csv",
             mime="text/csv",
         )
-
