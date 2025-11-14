@@ -60,18 +60,18 @@ with st.form("input_form", clear_on_submit=False):
     st.subheader("Item Market listings")
 
     st.markdown(
-        "[Access to your listings](https://www.torn.com/page.php?sid=ItemMarket#/addListing)",
+        "[Quick access to your listings](https://www.torn.com/page.php?sid=ItemMarket#/addListing)",
         unsafe_allow_html=False,
     )
 
     raw = st.text_area(
-        "Listings text",
+        "1. Paste your items",
         height=220,
         placeholder="Paste your full Add Listing items text here…",
     )
 
     api_key = st.text_input(
-        "Enter your public Torn API key…",
+        "2. Enter your public Torn API key…",
         value=cache.get("value", ""),
     )
 
@@ -181,4 +181,5 @@ if submitted:
             file_name="market_suggestions.csv",
             mime="text/csv",
         )
+
 
