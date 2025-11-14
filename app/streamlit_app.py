@@ -36,7 +36,6 @@ st.markdown(
 
 # ---------- Header ----------
 st.title("Kzon's Torn Market Analyzer")
-st.caption("Paste your Add Listing items from the Torn Item Market.")
 
 with st.expander("How this app works", icon="❓"):
     st.markdown(
@@ -65,7 +64,6 @@ with st.form("input_form", clear_on_submit=False):
         unsafe_allow_html=False,
     )
 
-    st.caption("Copy your full list of items from the Add Listing page and paste it below.")
     raw = st.text_area(
         "Listings text",
         height=220,
@@ -183,3 +181,4 @@ if submitted:
             file_name="market_suggestions.csv",
             mime="text/csv",
         )
+
