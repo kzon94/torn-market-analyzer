@@ -58,7 +58,6 @@ remember = True
 
 # ---------- Input form ----------
 with st.form("input_form", clear_on_submit=False):
-    st.subheader("Item Market listings")
 
     st.markdown(
         "[Access to your listings](https://www.torn.com/page.php?sid=ItemMarket#/addListing)",
@@ -67,7 +66,6 @@ with st.form("input_form", clear_on_submit=False):
 
     st.caption("Copy your full list of items from the Add Listing page and paste it below.")
     raw = st.text_area(
-        "Listings text",
         height=220,
         placeholder="Paste your full Add Listing items text here…",
     )
@@ -183,3 +181,4 @@ if submitted:
             file_name="market_suggestions.csv",
             mime="text/csv",
         )
+
