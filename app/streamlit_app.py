@@ -44,7 +44,7 @@ st.markdown(
 # ---------- Header ----------
 st.title("Kzon's Torn Market Analyzer")
 
-with st.expander("How this app works", icon="❓"):
+with st.expander("How this app works"):
     st.markdown(
         """
         - Copy the list of items from the **Add Listing** section of the Item Market.
