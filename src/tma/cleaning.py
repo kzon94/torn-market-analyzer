@@ -3,6 +3,7 @@ import unicodedata
 from html import unescape
 from typing import List, Optional
 
+# Regex patterns
 QTY_RX = re.compile(r'\bx(\d+)\b', flags=re.I)
 FLOAT_RX = re.compile(r'\b\d+\.\d+\b')
 STANDALONE_INT_RX = re.compile(r'(?<=\s)\d+(?=\s)')
@@ -11,6 +12,7 @@ NUMERIC_ONLY_RX = re.compile(r'^\d+(\.\d+)?$')  # pure numeric line
 
 
 def strip_accents(s: str) -> str:
+    """Remove accents from a string."""
     return ''.join(
         c for c in unicodedata.normalize('NFD', s)
         if unicodedata.category(c) != 'Mn'
@@ -18,6 +20,7 @@ def strip_accents(s: str) -> str:
 
 
 def to_key(name: str) -> str:
+    """Normalize item name into a lowercased, underscore-safe key."""
     s = unescape(name or "").strip().lower()
     s = strip_accents(s)
     s = re.sub(r'[^a-z0-9]+', '_', s)
@@ -26,11 +29,12 @@ def to_key(name: str) -> str:
 
 
 def split_lower_upper(s: str) -> str:
+    """Insert spaces between lower and upper case transitions."""
     return LOWER_UPPER_RX.sub(r'\1 \2', s)
 
 
 def split_raw_into_segments(raw_text: str) -> List[str]:
-    # Parse Torn Add Listing text into one segment per item
+    """Parse Torn Add Listing text into one item segment per line."""
     lines = [l.strip() for l in raw_text.splitlines()]
     segments: List[str] = []
     current_name: Optional[str] = None
@@ -105,3 +109,27 @@ def split_raw_into_segments(raw_text: str) -> List[str]:
             segments.append(current_name)
 
     return segments
+
+
+def extract_quantity(text: str) -> Optional[int]:
+    """Extract quantity from a segment like 'Item Name x5'."""
+    m = QTY_RX.search(text)
+    return int(m.group(1)) if m else None
+
+
+def drop_color_prefix(text: str) -> str:
+    """Remove color prefixes like 'Yellow' or 'Orange' from item names."""
+    s = text.strip()
+    m = re.match(r'^(yellow|orange)([\s\-_]*)(.*)$', s, flags=re.I)
+    return (m.group(3).strip() if m else s)
+
+
+def strip_noise_keep_name(text: str) -> str:
+    """Remove numeric noise and keep a clean item name."""
+    text = QTY_RX.sub(" ", text)
+    text = FLOAT_RX.sub(" ", text)
+    text = STANDALONE_INT_RX.sub(" ", text)
+    text = split_lower_upper(text)
+    text = text.replace('-', '_')
+    text = re.sub(r'\s+', ' ', text).strip(" :_").strip()
+    return text
