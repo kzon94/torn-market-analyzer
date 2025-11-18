@@ -32,13 +32,7 @@ def split_lower_upper(s: str) -> str:
 
 # --- MAIN: Parse Torn Market listing text into item segments ---
 def split_raw_into_segments(raw_text: str) -> List[str]:
-    """
-    Parse structured Torn market listing text into clean item segments.
-    - Extracts item names
-    - Captures quantities (xN)
-    - Skips Equipped / Untradable items
-    - Ignores RRP, prices, Qty/Price headings, and system lines
-    """
+
     lines = [l.strip() for l in raw_text.splitlines()]
     segments: List[str] = []
     current_name: Optional[str] = None
@@ -52,7 +46,7 @@ def split_raw_into_segments(raw_text: str) -> List[str]:
         low = line.lower()
 
         # Recognize and mark items that must be excluded
-        if low in {"equipped", "untradable"}:
+        if low in {"untradable"}:
             skip_current_item = True
             continue
 
