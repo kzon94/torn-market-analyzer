@@ -60,7 +60,7 @@ with st.expander("How this app works"):
     st.markdown(
         """
         - Copy the list of items from the **Add Listing** section of the Item Market.
-        - Paste it in the text box below; prices and untradable/equipped items are ignored.
+        - Paste it in the text box below; prices and untradable items are ignored.
         - The app calls the Torn `itemmarket` API with your **public** key (read-only, rate-limited).
         - It computes market KPIs and suggests listing prices based on the first 20 units.
         - Your API key is cached locally for convenience and is **not** shared anywhere.
