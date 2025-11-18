@@ -95,7 +95,7 @@ with st.form("input_form", clear_on_submit=False):
     )
 
     remember = st.checkbox(
-        "Remember API key in cache",
+        "Remember API key",
         value=True,
         help="Stores your API key locally in cache (not shared).",
     )
