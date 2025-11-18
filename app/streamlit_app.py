@@ -44,6 +44,18 @@ st.markdown(
 # ---------- Header ----------
 st.title("Kzon's Torn Market Analyzer")
 
+st.markdown(
+    """
+    <p style="margin-top:-12px; font-size:0.95rem; color:#666;">
+        Under development by 
+        <a href="https://www.torn.com/profiles.php?XID=3968250" target="_blank" style="text-decoration:none;">
+            Kzon [3968250]
+        </a>
+    </p>
+    """,
+    unsafe_allow_html=True,
+)
+
 with st.expander("How this app works"):
     st.markdown(
         """
