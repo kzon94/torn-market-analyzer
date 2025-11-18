@@ -7,7 +7,7 @@ QTY_RX = re.compile(r'\bx(\d+)\b', flags=re.I)
 FLOAT_RX = re.compile(r'\b\d+\.\d+\b')
 STANDALONE_INT_RX = re.compile(r'(?<=\s)\d+(?=\s)')
 LOWER_UPPER_RX = re.compile(r'([a-z])([A-Z])')
-NUMERIC_ONLY_RX = re.compile(r'^\d+(\.\d+)?$')
+NUMERIC_ONLY_RX = re.compile(r'^\d+(\.\d+)?$')  # pure numeric line
 
 
 def strip_accents(s: str) -> str:
