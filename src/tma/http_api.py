@@ -30,7 +30,7 @@ def fetch_first10(session, bucket, api_key: str, item_id: int, my_quantity: int)
             if isinstance(data, dict) and "error" in data:
                 code = data["error"].get("code"); msg = data["error"].get("error")
                 if code == 2 and mode != 3: continue
-                if code in (0,10) or status in (429,500,502,503,504):
+                if code in (0,20) or status in (429,500,502,503,504):
                     time.sleep(backoff); backoff *= 1.6; break
                 return {"item_id": item_id, "my_quantity": my_quantity, "error": f"API error {code}: {msg}"}
             else:
@@ -47,12 +47,13 @@ def fetch_first10(session, bucket, api_key: str, item_id: int, my_quantity: int)
                 for i, l in enumerate(listings[:20], start=1):
                     row[f"price_{i}"]  = l.get("price")
                     row[f"amount_{i}"] = l.get("amount")
-                for i in range(len(listings)+1, 11):
+                for i in range(len(listings)+1, 21):
                     row[f"price_{i}"]  = None
                     row[f"amount_{i}"] = None
                 return row
         time.sleep(backoff); backoff *= 1.6
 
     return {"item_id": item_id, "my_quantity": my_quantity, "error": "Exhausted retries"}
+
 
 
