@@ -20,13 +20,12 @@ from tma.io_utils import to_csv_bytes, apply_display_formatting
 st.set_page_config(page_title="Kzon's Torn Market Analyzer", layout="centered")
 
 
-# ---------- Cache (API key) ----------
-@st.cache_resource(show_spinner=False)
-def _api_key_cache():
-    return {"value": ""}
+# ---------- Session state (per-user API key) ----------
+if "api_key" not in st.session_state:
+    st.session_state["api_key"] = ""
 
 
-# ---------- Global styles (solo centrar) ----------
+# ---------- Global styles ----------
 st.markdown(
     """
     <style>
@@ -63,11 +62,10 @@ with st.expander("How this app works"):
         - Paste it in the text box below; prices and untradable items are ignored.
         - The app calls the Torn `itemmarket` API with your **public** key (read-only, rate-limited).
         - It computes market KPIs and suggests listing prices based on the first 20 units.
-        - Your API key is cached locally for convenience and is **not** shared anywhere.
+        - Your API key can be stored in your browser session for convenience and is **not** shared anywhere.
         """
     )
 
-cache = _api_key_cache()
 submitted = False
 raw = ""
 api_key = ""
@@ -91,13 +89,14 @@ with st.form("input_form", clear_on_submit=False):
 
     api_key = st.text_input(
         "Enter your public Torn API key",
-        value=cache.get("value", ""),
+        value=st.session_state["api_key"],
+        key="api_key_input",
     )
 
     remember = st.checkbox(
-        "Remember API key",
+        "Remember API key during this session",
         value=True,
-        help="Stores your API key locally in cache (not shared).",
+        help="Keeps your API key stored in this browser session only.",
     )
 
     submitted = st.form_submit_button("Run")
@@ -115,8 +114,11 @@ if submitted:
         st.error("API key required.")
         st.stop()
 
+    # Update per-session API key (only for this user/session)
     if remember:
-        cache["value"] = api_key
+        st.session_state["api_key"] = api_key
+    else:
+        st.session_state["api_key"] = ""
 
     # 1) Cleaning & matching
     with st.spinner("Cleaning & matching…"):
@@ -200,6 +202,3 @@ if submitted:
             file_name="market_suggestions.csv",
             mime="text/csv",
         )
-
-
-
