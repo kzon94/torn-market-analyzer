@@ -10,7 +10,7 @@ if str(SRC_DIR) not in sys.path:
 
 from tma.config import DICT_PATH, RATE_LIMIT_PER_MIN, FUZZY_THRESHOLD
 from tma.matching import load_dict, clean_and_match_from_raw, aggregate_id_quantity
-from tma.http_api import session_for_requests, fetch_first10
+from tma.http_api import session_for_requests, fetch_100
 from tma.rate_limit import TokenBucket
 from tma.analytics import analyze_market
 from tma.io_utils import to_csv_bytes, apply_display_formatting
@@ -144,7 +144,7 @@ if submitted:
     with st.spinner("Fetching market data…"):
         sess = session_for_requests()
         bucket = TokenBucket(RATE_LIMIT_PER_MIN)
-        out_rows = [fetch_first10(sess, bucket, api_key, iid, qty) for iid, qty in agg]
+        out_rows = [fetch_100(sess, bucket, api_key, iid, qty) for iid, qty in agg]
         df_market = pd.DataFrame(out_rows)
 
         for i in range(1, 11):
