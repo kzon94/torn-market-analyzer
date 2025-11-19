@@ -11,7 +11,7 @@ def session_for_requests():
 
 def attempt_call(session, bucket: TokenBucket, api_key: str, item_id: int, mode: int):
     url = f"{BASE_URL}/market/{item_id}/itemmarket"
-    headers, params = {}, {"limit": 10, "offset": 0}
+    headers, params = {}, {"limit": 20, "offset": 0}
     if mode == 1: headers["Authorization"] = f"Apikey {api_key}"
     elif mode == 2: headers["Authorization"] = f"ApiKey {api_key}"
     else: params["key"] = api_key
@@ -54,3 +54,4 @@ def fetch_first10(session, bucket, api_key: str, item_id: int, my_quantity: int)
         time.sleep(backoff); backoff *= 1.6
 
     return {"item_id": item_id, "my_quantity": my_quantity, "error": "Exhausted retries"}
+
