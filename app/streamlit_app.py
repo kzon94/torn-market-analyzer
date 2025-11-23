@@ -162,7 +162,7 @@ if submitted:
         wanted_cols = ["input_segment", "cleaned_name", "normalized_key", "quantity", "id", "confidence"]
         df_parsed_view = df_clean.reindex(columns=wanted_cols)
         st.success(f"Parsed {len(df_clean)} segments")
-        st.dataframe(df_parsed_view, use_container_width=True)
+        st.dataframe(df_parsed_view, width="container")
 
     # 2) Aggregate quantities per item_id
     agg = aggregate_id_quantity(clean_rows)
@@ -193,7 +193,7 @@ if submitted:
 
         st.success(f"Fetched {len(df_market)} items")
         st.subheader("Raw market data (wide format)")
-        st.dataframe(df_market.head(30), use_container_width=True)
+        st.dataframe(df_market.head(30), width="container")
 
     # 4) Anchor-aware price suggestions
     with st.spinner("Computing anchor-aware price suggestions…"):
@@ -229,7 +229,7 @@ if submitted:
                 "clean_q3_price",
             ]
         ]
-        st.dataframe(sugg_view, use_container_width=True)
+        st.dataframe(sugg_view, width="container")
 
         # 5) Downloads
         st.subheader("Downloads")
