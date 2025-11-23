@@ -132,7 +132,6 @@ if submitted:
         st.error("API key required.")
         st.stop()
 
-    # Always keep last API key in session for convenience
     st.session_state["api_key"] = api_key
 
     # 1) Cleaning & matching
@@ -181,7 +180,7 @@ if submitted:
             if c in df_market.columns:
                 df_market[c] = pd.to_numeric(df_market[c], errors="coerce")
 
-        st.success(f"Fetched {len(df_market)} items")
+        st.success(f"Fetched {len[df_market]} items")
         st.subheader("Raw market data")
         st.dataframe(df_market.head(30), width="stretch")
 
@@ -198,14 +197,63 @@ if submitted:
         df_summary_sorted = df_summary.sort_values("item_name").reset_index(drop=True)
 
         st.subheader("Sale suggestions")
-        st.caption(
-            "❓ **How are these prices calculated?** "
-            "Fast-sell is based on the cheapest clean listings or first clean volume slice, "
-            "fair price is a robust (volume-weighted) median after removing suspected price anchors, "
-            "and greedy price is based on clean upper quantiles (Q3). "
-            "Anchors are detected using robust z-scores, order book depth, and volume per price level, "
-            "with special handling for very thin or exclusive markets."
-        )
+
+        with st.expander("How are prices calculated?"):
+            st.markdown(
+                """
+                **High-level idea**
+
+                - The app pulls up to the first 100 listings per item from the Torn Item Market.
+                - Each listing has a price and a quantity (units for sale at that price).
+                - We treat the market as an order book and compute robust price statistics, while trying to ignore obvious anchors and meme walls.
+
+                **1. Robust statistics (per item)**  
+                For each item, we:
+                - Compute a volume-weighted median and volume-weighted quartiles (Q1, Q3).
+                - Estimate a robust scale (MAD – median absolute deviation) around the median.
+                - Use this to define a **robust z-score** for each listing:
+                  \n\n
+                  `robust_z = 0.6745 * (price - median) / MAD`
+                  \n\n
+                - This helps identify extreme prices compared to the overall distribution.
+
+                **2. Depth of the book**
+                - Listings are sorted by price (cheapest to most expensive).
+                - We track cumulative quantity and the percentage of total quantity covered by each listing.
+                - This lets us distinguish:
+                  - Very shallow front levels (first few units, often used as bait).
+                  - Deep tail levels (very high prices with small volume).
+
+                **3. Detecting suspected price anchors**
+                - We aggregate volume by exact price level to see how dominant each level is.
+                - Markets are classified as:
+                  - **Normal**: enough total volume and no single price dominating.
+                  - **Exclusive/thin**: few total units or a single price level with a large share of the volume.
+                - In normal markets, suspected anchors are prices with:
+                  - Very large |robust z-score| (far from the clean center),
+                  - Located in shallow parts of the book (front or tail),
+                  - And relatively small volume.
+                - In exclusive/thin markets we are more conservative:
+                  - Only very high prices, far above the median (e.g. > 10× median), with low volume or in shallow zones, are treated as anchors.
+
+                All listings flagged as suspected anchors are removed before computing suggested prices, unless that would remove everything.
+
+                **4. Suggested prices**
+                - **Fair price**:
+                  - Normal markets: volume-weighted median of the clean listings.
+                  - Thin markets: simple median across listings (per-listing, not per-unit).
+                - **Greedy price**:
+                  - Uses the clean upper quartile (Q3) as an optimistic but still data-backed price.
+                - **Fast-sell price**:
+                  - Thin markets: usually the 3rd cheapest clean listing.
+                  - Unit-style markets (few units per listing): pick a cheap clean listing around the *N*-th rank (e.g. near the 10th listing).
+                  - Bulk markets (many units per listing): find the first price where the cumulative clean volume reaches a target number of units (e.g. 100 units).
+
+                This combination aims to:
+                - Ignore obvious bait prices and walls that do not reflect real trading levels.
+                - Provide a balanced **fair** price, a more aggressive **fast-sell** level, and a more ambitious **greedy** level, all derived from the same cleaned order book.
+                """
+            )
 
         sugg_cols = [
             "item_name",
