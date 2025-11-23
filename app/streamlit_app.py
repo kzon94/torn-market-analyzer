@@ -3,6 +3,10 @@ import pandas as pd
 import sys
 from pathlib import Path
 
+# ---------------------------------------------------------------------
+# PATHS & IMPORTS
+# ---------------------------------------------------------------------
+
 ROOT_DIR = Path(__file__).resolve().parents[1]
 SRC_DIR = ROOT_DIR / "src"
 if str(SRC_DIR) not in sys.path:
@@ -12,20 +16,33 @@ from tma.config import DICT_PATH, RATE_LIMIT_PER_MIN, FUZZY_THRESHOLD
 from tma.matching import load_dict, clean_and_match_from_raw, aggregate_id_quantity
 from tma.http_api import session_for_requests, fetch_100
 from tma.rate_limit import TokenBucket
-from tma.analytics import analyze_market
-from tma.io_utils import to_csv_bytes, apply_display_formatting
+from tma.io_utils import to_csv_bytes
+from tma.market_enrichment import (
+    wide_to_long,
+    enrich_all_items,
+    build_summary_from_enriched,
+)
 
 
-# ---------- App config ----------
+# ---------------------------------------------------------------------
+# APP CONFIG
+# ---------------------------------------------------------------------
+
 st.set_page_config(page_title="Kzon's Torn Market Analyzer", layout="centered")
 
 
-# ---------- Session state (per-user API key) ----------
+# ---------------------------------------------------------------------
+# SESSION STATE (PER-USER API KEY)
+# ---------------------------------------------------------------------
+
 if "api_key" not in st.session_state:
     st.session_state["api_key"] = ""
 
 
-# ---------- Global styles ----------
+# ---------------------------------------------------------------------
+# GLOBAL STYLES
+# ---------------------------------------------------------------------
+
 st.markdown(
     """
     <style>
@@ -40,7 +57,10 @@ st.markdown(
 )
 
 
-# ---------- Header ----------
+# ---------------------------------------------------------------------
+# HEADER
+# ---------------------------------------------------------------------
+
 st.title("Kzon's Torn Market Analyzer")
 
 st.markdown(
@@ -59,20 +79,26 @@ with st.expander("How this app works"):
     st.markdown(
         """
         - Copy the list of items from the **Add Listing** section of the Item Market.
-        - Paste it in the text box below; prices and untradable items are ignored.
+        - Paste it in the text box below; prices and untradable/equipped items are ignored.
         - The app calls the Torn `itemmarket` API with your **public** key (read-only, rate-limited).
-        - It computes market KPIs and suggests listing prices based on the first 20 units.
+        - It fetches up to the first 100 listings per item and computes **anchor-aware price suggestions**:
+            - **Fast-sell**: price to move stock quickly.
+            - **Fair**: robust market median after removing outliers and price walls.
+            - **Greedy**: upper “optimistic” price based on clean upper quantiles.
         - Your API key can be stored in your browser session for convenience and is **not** shared anywhere.
         """
     )
+
+
+# ---------------------------------------------------------------------
+# INPUT FORM
+# ---------------------------------------------------------------------
 
 submitted = False
 raw = ""
 api_key = ""
 remember = True
 
-
-# ---------- Input form ----------
 with st.form("input_form", clear_on_submit=False):
     st.subheader("Item Market listings")
 
@@ -102,8 +128,12 @@ with st.form("input_form", clear_on_submit=False):
     submitted = st.form_submit_button("Run")
 
 
-# ---------- Pipeline ----------
+# ---------------------------------------------------------------------
+# PIPELINE
+# ---------------------------------------------------------------------
+
 if submitted:
+    # Basic validation
     if not DICT_PATH.exists():
         st.error("Dictionary CSV not found (data/torn_item_dictionary.csv).")
         st.stop()
@@ -129,54 +159,80 @@ if submitted:
             st.warning("No matches found.")
             st.stop()
 
-        wanted_cols = ["input_segment", "normalized_key", "quantity", "id"]
+        wanted_cols = ["input_segment", "cleaned_name", "normalized_key", "quantity", "id", "confidence"]
         df_parsed_view = df_clean.reindex(columns=wanted_cols)
         st.success(f"Parsed {len(df_clean)} segments")
         st.dataframe(df_parsed_view, use_container_width=True)
 
-    # 2) Aggregate quantities
+    # 2) Aggregate quantities per item_id
     agg = aggregate_id_quantity(clean_rows)
     if not agg:
         st.warning("No valid item IDs after cleaning.")
         st.stop()
 
-    # 3) Fetch market data
+    # 3) Fetch market data (wide format: price_1…price_100, amount_1…amount_100)
     with st.spinner("Fetching market data…"):
         sess = session_for_requests()
         bucket = TokenBucket(RATE_LIMIT_PER_MIN)
+
         out_rows = [fetch_100(sess, bucket, api_key, iid, qty) for iid, qty in agg]
         df_market = pd.DataFrame(out_rows)
 
-        for i in range(1, 11):
+        # Normalize numeric columns for safety
+        for i in range(1, 101):
             pcol = f"price_{i}"
             acol = f"amount_{i}"
             if pcol in df_market.columns:
-                df_market[pcol] = pd.to_numeric(df_market[pcol], errors="coerce").astype("Int64")
+                df_market[pcol] = pd.to_numeric(df_market[pcol], errors="coerce")
             if acol in df_market.columns:
-                df_market[acol] = pd.to_numeric(df_market[acol], errors="coerce").astype("Int64")
+                df_market[acol] = pd.to_numeric(df_market[acol], errors="coerce")
+
         for c in ["average_price", "my_quantity", "item_id"]:
             if c in df_market.columns:
-                df_market[c] = pd.to_numeric(df_market[c], errors="coerce").astype("Int64")
+                df_market[c] = pd.to_numeric(df_market[c], errors="coerce")
 
         st.success(f"Fetched {len(df_market)} items")
+        st.subheader("Raw market data (wide format)")
         st.dataframe(df_market.head(30), use_container_width=True)
 
-    # 4) KPIs & suggestions
-    with st.spinner("Computing KPIs & suggestions…"):
-        kpis, sugg = analyze_market(df_market)
-        kpis_view = kpis.drop(columns=["item_type", "units_used_for_20u"], errors="ignore")
+    # 4) Anchor-aware price suggestions
+    with st.spinner("Computing anchor-aware price suggestions…"):
+        # 4.1 Convert wide → long (one row per listing)
+        df_long = wide_to_long(df_market)
 
-        st.subheader("Market KPIs per item")
-        st.dataframe(
-            apply_display_formatting(kpis_view).sort_values("item_name").reset_index(drop=True),
-            use_container_width=True,
-        )
+        if df_long.empty:
+            st.warning("No valid listings found in the market data.")
+            st.stop()
 
-        st.subheader("Sale suggestions")
-        st.dataframe(
-            apply_display_formatting(sugg).sort_values("item_name").reset_index(drop=True),
-            use_container_width=True,
-        )
+        # 4.2 Enrich listings (stats, depth, suspected anchors)
+        df_enriched = enrich_all_items(df_long)
+
+        # 4.3 Build per-item summary (fast / fair / greedy + diagnostics)
+        df_summary = build_summary_from_enriched(df_enriched)
+
+        # Sort by item name for display
+        df_summary_sorted = df_summary.sort_values("item_name").reset_index(drop=True)
+
+        st.subheader("Sale suggestions (anchor-aware)")
+        sugg_view = df_summary_sorted[
+            [
+                "item_id",
+                "item_name",
+                "my_quantity",
+                "num_listings",
+                "num_suspected_anchors",
+                "fast_sell_price",
+                "fair_price",
+                "greedy_price",
+                "clean_q1_price",
+                "clean_median_price",
+                "clean_q3_price",
+            ]
+        ]
+        st.dataframe(sugg_view, use_container_width=True)
+
+        # 5) Downloads
+        st.subheader("Downloads")
 
         st.download_button(
             "Download clean_data_id.csv",
@@ -185,20 +241,26 @@ if submitted:
             mime="text/csv",
         )
         st.download_button(
-            "Download market_list.csv",
+            "Download market_list.csv (wide)",
             data=to_csv_bytes(df_market),
             file_name="market_list.csv",
             mime="text/csv",
         )
         st.download_button(
-            "Download market_kpis.csv",
-            data=to_csv_bytes(kpis),
-            file_name="market_kpis.csv",
+            "Download market_list_long.csv",
+            data=to_csv_bytes(df_long),
+            file_name="market_list_long.csv",
+            mime="text/csv",
+        )
+        st.download_button(
+            "Download market_list_enriched.csv",
+            data=to_csv_bytes(df_enriched),
+            file_name="market_list_enriched.csv",
             mime="text/csv",
         )
         st.download_button(
             "Download market_suggestions.csv",
-            data=to_csv_bytes(sugg),
+            data=to_csv_bytes(df_summary_sorted),
             file_name="market_suggestions.csv",
             mime="text/csv",
         )
