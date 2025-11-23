@@ -1,7 +1,8 @@
-import streamlit as st
-import pandas as pd
 import sys
 from pathlib import Path
+
+import pandas as pd
+import streamlit as st
 
 # ---------------------------------------------------------------------
 # PATHS & IMPORTS
@@ -29,11 +30,6 @@ from tma.market_enrichment import (
 # ---------------------------------------------------------------------
 
 st.set_page_config(page_title="Kzon's Torn Market Analyzer", layout="centered")
-
-
-# ---------------------------------------------------------------------
-# SESSION STATE (PER-USER API KEY)
-# ---------------------------------------------------------------------
 
 if "api_key" not in st.session_state:
     st.session_state["api_key"] = ""
@@ -133,7 +129,6 @@ with st.form("input_form", clear_on_submit=False):
 # ---------------------------------------------------------------------
 
 if submitted:
-    # Basic validation
     if not DICT_PATH.exists():
         st.error("Dictionary CSV not found (data/torn_item_dictionary.csv).")
         st.stop()
@@ -144,7 +139,6 @@ if submitted:
         st.error("API key required.")
         st.stop()
 
-    # Update per-session API key (only for this user/session)
     if remember:
         st.session_state["api_key"] = api_key
     else:
@@ -159,10 +153,10 @@ if submitted:
             st.warning("No matches found.")
             st.stop()
 
-        wanted_cols = ["input_segment", "cleaned_name", "normalized_key", "quantity", "id", "confidence"]
-        df_parsed_view = df_clean.reindex(columns=wanted_cols)
+        parsed_cols = ["input_segment", "cleaned_name", "normalized_key", "quantity", "id", "confidence"]
+        df_parsed_view = df_clean.reindex(columns=parsed_cols)
         st.success(f"Parsed {len(df_clean)} segments")
-        st.dataframe(df_parsed_view, width="container")
+        st.dataframe(df_parsed_view, width="stretch")
 
     # 2) Aggregate quantities per item_id
     agg = aggregate_id_quantity(clean_rows)
@@ -170,7 +164,7 @@ if submitted:
         st.warning("No valid item IDs after cleaning.")
         st.stop()
 
-    # 3) Fetch market data (wide format: price_1…price_100, amount_1…amount_100)
+    # 3) Fetch market data (wide format)
     with st.spinner("Fetching market data…"):
         sess = session_for_requests()
         bucket = TokenBucket(RATE_LIMIT_PER_MIN)
@@ -178,7 +172,6 @@ if submitted:
         out_rows = [fetch_100(sess, bucket, api_key, iid, qty) for iid, qty in agg]
         df_market = pd.DataFrame(out_rows)
 
-        # Normalize numeric columns for safety
         for i in range(1, 101):
             pcol = f"price_{i}"
             acol = f"amount_{i}"
@@ -193,24 +186,18 @@ if submitted:
 
         st.success(f"Fetched {len(df_market)} items")
         st.subheader("Raw market data (wide format)")
-        st.dataframe(df_market.head(30), width="container")
+        st.dataframe(df_market.head(30), width="stretch")
 
     # 4) Anchor-aware price suggestions
     with st.spinner("Computing anchor-aware price suggestions…"):
-        # 4.1 Convert wide → long (one row per listing)
         df_long = wide_to_long(df_market)
 
         if df_long.empty:
             st.warning("No valid listings found in the market data.")
             st.stop()
 
-        # 4.2 Enrich listings (stats, depth, suspected anchors)
         df_enriched = enrich_all_items(df_long)
-
-        # 4.3 Build per-item summary (fast / fair / greedy + diagnostics)
         df_summary = build_summary_from_enriched(df_enriched)
-
-        # Sort by item name for display
         df_summary_sorted = df_summary.sort_values("item_name").reset_index(drop=True)
 
         st.subheader("Sale suggestions (anchor-aware)")
@@ -229,9 +216,8 @@ if submitted:
                 "clean_q3_price",
             ]
         ]
-        st.dataframe(sugg_view, width="container")
+        st.dataframe(sugg_view, width="stretch")
 
-        # 5) Downloads
         st.subheader("Downloads")
 
         st.download_button(
