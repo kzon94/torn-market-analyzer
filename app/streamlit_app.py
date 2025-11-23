@@ -81,7 +81,7 @@ with st.expander("How this app works"):
             - **Fast-sell**: price to move stock quickly.
             - **Fair**: robust market median after removing outliers and price walls.
             - **Greedy**: upper “optimistic” price based on clean upper quantiles.
-        - Your API key can be stored in your browser session for convenience and is **not** shared anywhere.
+        - Your API key is only used from your browser session to query the Torn API.
         """
     )
 
@@ -93,7 +93,6 @@ with st.expander("How this app works"):
 submitted = False
 raw = ""
 api_key = ""
-remember = True
 
 with st.form("input_form", clear_on_submit=False):
     st.subheader("Item Market listings")
@@ -115,12 +114,6 @@ with st.form("input_form", clear_on_submit=False):
         key="api_key_input",
     )
 
-    remember = st.checkbox(
-        "Remember API key during this session",
-        value=True,
-        help="Keeps your API key stored in this browser session only.",
-    )
-
     submitted = st.form_submit_button("Run")
 
 
@@ -139,10 +132,8 @@ if submitted:
         st.error("API key required.")
         st.stop()
 
-    if remember:
-        st.session_state["api_key"] = api_key
-    else:
-        st.session_state["api_key"] = ""
+    # Always keep last API key in session for convenience
+    st.session_state["api_key"] = api_key
 
     # 1) Cleaning & matching
     with st.spinner("Cleaning & matching…"):
@@ -153,7 +144,13 @@ if submitted:
             st.warning("No matches found.")
             st.stop()
 
-        parsed_cols = ["input_segment", "cleaned_name", "normalized_key", "quantity", "id", "confidence"]
+        parsed_cols = [
+            "input_segment",
+            "cleaned_name",
+            "normalized_key",
+            "quantity",
+            "id",
+        ]
         df_parsed_view = df_clean.reindex(columns=parsed_cols)
         st.success(f"Parsed {len(df_clean)} segments")
         st.dataframe(df_parsed_view, width="stretch")
@@ -185,7 +182,7 @@ if submitted:
                 df_market[c] = pd.to_numeric(df_market[c], errors="coerce")
 
         st.success(f"Fetched {len(df_market)} items")
-        st.subheader("Raw market data (wide format)")
+        st.subheader("Raw market data")
         st.dataframe(df_market.head(30), width="stretch")
 
     # 4) Anchor-aware price suggestions
@@ -200,22 +197,30 @@ if submitted:
         df_summary = build_summary_from_enriched(df_enriched)
         df_summary_sorted = df_summary.sort_values("item_name").reset_index(drop=True)
 
-        st.subheader("Sale suggestions (anchor-aware)")
-        sugg_view = df_summary_sorted[
-            [
-                "item_id",
-                "item_name",
-                "my_quantity",
-                "num_listings",
-                "num_suspected_anchors",
-                "fast_sell_price",
-                "fair_price",
-                "greedy_price",
-                "clean_q1_price",
-                "clean_median_price",
-                "clean_q3_price",
-            ]
+        st.subheader("Sale suggestions")
+        st.caption(
+            "❓ **How are these prices calculated?** "
+            "Fast-sell is based on the cheapest clean listings or first clean volume slice, "
+            "fair price is a robust (volume-weighted) median after removing suspected price anchors, "
+            "and greedy price is based on clean upper quantiles (Q3). "
+            "Anchors are detected using robust z-scores, order book depth, and volume per price level, "
+            "with special handling for very thin or exclusive markets."
+        )
+
+        sugg_cols = [
+            "item_name",
+            "my_quantity",
+            "fast_sell_price",
+            "fair_price",
+            "greedy_price",
+            "num_listings",
+            "num_suspected_anchors",
+            "clean_q1_price",
+            "clean_median_price",
+            "clean_q3_price",
         ]
+        existing_cols = [c for c in sugg_cols if c in df_summary_sorted.columns]
+        sugg_view = df_summary_sorted[existing_cols]
         st.dataframe(sugg_view, width="stretch")
 
         st.subheader("Downloads")
@@ -227,7 +232,7 @@ if submitted:
             mime="text/csv",
         )
         st.download_button(
-            "Download market_list.csv (wide)",
+            "Download market_list.csv",
             data=to_csv_bytes(df_market),
             file_name="market_list.csv",
             mime="text/csv",
