@@ -67,14 +67,43 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-with st.expander("How this app works"):
+with st.expander("How are prices calculated?"):
     st.markdown(
         """
-        - Copy the list of items from the **Add Listing** section of the Item Market.
-        - Paste it below; prices and untradable/equipped tags are ignored.
-        - The app calls the Torn `itemmarket` endpoint with your **public** API key.
-        - Up to the first 100 listings per item are loaded and cleaned.
-        - Using those listings, the app computes fast / fair / greedy prices that try to ignore obvious anchors and meme walls.
+        **How to use the app**
+
+        - Go to the **Add Listing** section of the Item Market.
+        - Copy the item list (the part with item names and quantities).
+        - Paste it in the text box below; prices and untradable/equipped tags are ignored.
+        - Enter your **public Torn API key** (read-only) so the app can call the `itemmarket` endpoint.
+        - The app fetches up to the first 100 listings per item and computes suggested prices.
+
+        **What the app does under the hood**
+
+        1. **Clean order book**
+           - For each item, up to 100 listings (price + quantity) are loaded.
+           - Listings are sorted by price and cumulative quantity is tracked to understand market depth.
+           - Volume is also aggregated by exact price level to detect dominant price walls.
+
+        2. **Robust center and spread**
+           - A volume-weighted median and quartiles (Q1, Q3) are computed.
+           - A robust spread (MAD – median absolute deviation) around the median is used to derive robust z-scores.
+           - This helps flag extremely cheap/expensive prices relative to the bulk of the market.
+
+        3. **Suspected anchors**
+           - Markets are marked as **normal** or **thin/exclusive** based on total units and dominance of a single price level.
+           - In normal markets, suspected anchors are listings with large |z|, shallow depth and small volume.
+           - In thin markets, only very high prices far above the median with low volume are flagged.
+           - These suspected anchors are removed for pricing (unless that would remove everything).
+
+        4. **Suggested prices**
+           - **Fair price**: clean median (volume-weighted in normal markets, per-listing in thin ones).
+           - **Greedy price**: clean Q3 (upper quartile) of prices.
+           - **Fast-sell price**:
+             - Thin markets: around the 3rd cheapest clean listing.
+             - Unit-style markets: around the N-th cheapest clean listing.
+             - Bulk markets: first price where cumulative clean volume reaches a target units threshold.
+             - Finally, the app subtracts **1$** from that fast-sell level so you undercut the last bulk wall by 1.
         """
     )
 
@@ -207,39 +236,16 @@ if submitted:
         }
     )
 
-    st.dataframe(overview, width="stretch")
-
-    with st.expander("How are prices calculated?"):
-        st.markdown(
-            """
-            **1. Clean order book**
-
-            - For each item, up to 100 listings are loaded: price + quantity.
-            - Listings are sorted by price and cumulative quantity is tracked to understand depth.
-            - Volume is also aggregated by exact price level.
-
-            **2. Robust center and spread**
-
-            - A volume-weighted median and quartiles (Q1, Q3) are computed.
-            - A robust spread (MAD – median absolute deviation) is used to detect extreme prices via robust z-scores.
-
-            **3. Suspected anchors**
-
-            - Markets are tagged as normal or thin/exclusive depending on volume and dominance of a single price level.
-            - In normal markets, we flag listings with very large |z|, shallow depth and small volume as suspected anchors.
-            - In thin markets, only very high prices with low volume are flagged.
-
-            **4. Suggested prices**
-
-            - Suspected anchors are removed before pricing (unless that would remove everything).
-            - **Fair price**: clean median (volume-weighted in normal markets, per-listing in thin ones).
-            - **Greedy price**: clean Q3 (upper quartile) of prices.
-            - **Fast-sell price**:
-              - Thin markets: around the 3rd cheapest clean listing.
-              - Unit-style markets: around the N-th cheapest clean listing.
-              - Bulk markets: first price where cumulative clean volume reaches a target number of units.
-            """
-        )
+    st.dataframe(
+        overview,
+        column_config={
+            "My quantity": st.column_config.NumberColumn(format="%,d"),
+            "Fast-sell price": st.column_config.NumberColumn(format="%,.0f"),
+            "Fair price": st.column_config.NumberColumn(format="%,.0f"),
+            "Greedy price": st.column_config.NumberColumn(format="%,.0f"),
+        },
+        width="stretch",
+    )
 
     # -----------------------------------------------------------------
     # DETAILED TABLES (EXPANDERS)

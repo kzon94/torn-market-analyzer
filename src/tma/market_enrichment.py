@@ -249,6 +249,7 @@ def compute_price_suggestions_for_item(df_item: pd.DataFrame) -> dict:
         df_item["my_quantity"].iloc[0] if "my_quantity" in df_item.columns else None
     )
 
+    # Remove suspected anchors for pricing
     if "is_suspected_anchor" in df_item.columns:
         df_clean = df_item[~df_item["is_suspected_anchor"]].copy()
         if df_clean.empty:
@@ -293,6 +294,7 @@ def compute_price_suggestions_for_item(df_item: pd.DataFrame) -> dict:
         or (max_level_share_clean >= EXCLUSIVE_DOMINANCE_SHARE)
     )
 
+    # Fair / greedy prices
     if exclusive_mode:
         fair_price = _unweighted_price_quantile_from_df(df_clean, 0.5)
         q1_price = _unweighted_price_quantile_from_df(df_clean, 0.25)
@@ -302,26 +304,32 @@ def compute_price_suggestions_for_item(df_item: pd.DataFrame) -> dict:
         q1_price = _weighted_price_quantile_from_df(df_clean, 0.25)
         q3_price = _weighted_price_quantile_from_df(df_clean, 0.75)
 
+    # Fast-sell price before adjustment
     df_clean_sorted = df_clean.sort_values("price").copy()
     df_clean_sorted["cum_qty_clean"] = df_clean_sorted["quantity"].cumsum()
 
     if exclusive_mode:
+        # Thin/exclusive markets: N-th cheapest clean listing
         exclusive_fast_index = 3
         idx = min(exclusive_fast_index - 1, len(df_clean_sorted) - 1)
         fast_sell_price = float(df_clean_sorted.iloc[idx]["price"])
     else:
         if avg_qty_per_listing <= 2.0:
+            # Unit-style: N-th cheapest listing
             target_listings = min(FAST_SELL_LISTINGS_THRESHOLD, len(df_clean_sorted))
             fast_sell_price = float(df_clean_sorted.iloc[target_listings - 1]["price"])
         else:
+            # Bulk: cumulative units threshold
             target_units = min(FAST_SELL_UNITS_THRESHOLD, total_qty_clean)
             mask = df_clean_sorted["cum_qty_clean"] >= target_units
             if mask.any():
-                fast_sell_price = float(
-                    df_clean_sorted.loc[mask, "price"].iloc[0]
-                )
+                fast_sell_price = float(df_clean_sorted.loc[mask, "price"].iloc[0])
             else:
                 fast_sell_price = float(df_clean_sorted["price"].iloc[-1])
+
+    # Final fast-sell tweak: go 1$ below the chosen level
+    if np.isfinite(fast_sell_price):
+        fast_sell_price = max(fast_sell_price - 1.0, 0.0)
 
     num_listings = len(df_item)
     num_suspected_anchors = int(
