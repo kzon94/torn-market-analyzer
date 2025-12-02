@@ -17,7 +17,6 @@ from tma.config import DICT_PATH, RATE_LIMIT_PER_MIN, FUZZY_THRESHOLD
 from tma.matching import load_dict, clean_and_match_from_raw, aggregate_id_quantity
 from tma.http_api import session_for_requests, fetch_100
 from tma.rate_limit import TokenBucket
-from tma.io_utils import to_csv_bytes
 from tma.market_enrichment import (
     wide_to_long,
     enrich_all_items,
@@ -143,8 +142,6 @@ if submitted:
             "id",
         ]
         df_parsed_view = df_clean.reindex(columns=parsed_cols)
-        st.success(f"Parsed {len(df_clean)} segments")
-        st.dataframe(df_parsed_view, width="stretch")
 
     # 2) Aggregate quantities per item_id
     agg = aggregate_id_quantity(clean_rows)
@@ -172,10 +169,6 @@ if submitted:
             if c in df_market.columns:
                 df_market[c] = pd.to_numeric(df_market[c], errors="coerce")
 
-        st.success(f"Fetched {len(df_market)} items")
-        st.subheader("Raw market data")
-        st.dataframe(df_market.head(30), width="stretch")
-
     # 4) Anchor-aware price suggestions
     with st.spinner("Computing anchor-aware price suggestions…"):
         df_long = wide_to_long(df_market)
@@ -188,94 +181,75 @@ if submitted:
         df_summary = build_summary_from_enriched(df_enriched)
         df_summary_sorted = df_summary.sort_values("item_name").reset_index(drop=True)
 
-        st.subheader("Sale suggestions")
+    # -----------------------------------------------------------------
+    # MAIN PRICE OVERVIEW (USER-FRIENDLY)
+    # -----------------------------------------------------------------
 
-        with st.expander("How are prices calculated?"):
-            st.markdown(
-                """
-                **1. Clean order book**
+    st.subheader("Price overview")
 
-                - For each item, up to 100 listings are taken: price + quantity.
-                - Listings are sorted by price and we compute cumulative quantity and share of total volume.
-                - We also aggregate volume by exact price level to see which levels dominate.
-
-                **2. Robust center and spread**
-
-                - Using all listings for an item, we compute:
-                  - A volume-weighted median price.
-                  - Volume-weighted quartiles (Q1 and Q3).
-                  - A robust spread (MAD – median absolute deviation) around the median.
-                - From these we derive a robust z-score per listing to flag extremely cheap or expensive prices.
-
-                **3. Suspected anchors**
-
-                - Markets are classified as:
-                  - Normal (enough volume, no single price level dominating).
-                  - Thin/exclusive (few units or one price level with most of the volume).
-                - In normal markets, suspected anchors are listings that:
-                  - Have a very large |robust z-score|,
-                  - Sit in shallow parts of the book (very front or very back),
-                  - And have relatively small volume.
-                - In thin markets we are stricter: we only mark very high prices (e.g. >> median) with small volume as anchors.
-
-                **4. Suggested prices**
-
-                - All suspected anchors are removed for pricing (unless that would remove everything).
-                - From the cleaned book we compute:
-                  - **Fair price**: median (volume-weighted in normal markets, per-listing in thin ones).
-                  - **Greedy price**: upper quartile (Q3) of clean prices.
-                  - **Fast-sell price**:
-                    - In thin markets: around the 3rd cheapest clean listing.
-                    - In unit-style markets: around the N-th cheapest clean listing.
-                    - In bulk markets: the first price where the cumulative clean volume reaches a target number of units.
-                """
-            )
-
-        sugg_cols = [
+    overview = df_summary_sorted[
+        [
             "item_name",
             "my_quantity",
             "fast_sell_price",
             "fair_price",
             "greedy_price",
-            "num_listings",
-            "num_suspected_anchors",
-            "clean_q1_price",
-            "clean_median_price",
-            "clean_q3_price",
         ]
-        existing_cols = [c for c in sugg_cols if c in df_summary_sorted.columns]
-        sugg_view = df_summary_sorted[existing_cols]
-        st.dataframe(sugg_view, width="stretch")
+    ].copy()
 
-        st.subheader("Downloads")
+    overview = overview.rename(
+        columns={
+            "item_name": "Item",
+            "my_quantity": "My quantity",
+            "fast_sell_price": "Fast-sell price",
+            "fair_price": "Fair price",
+            "greedy_price": "Greedy price",
+        }
+    )
 
-        st.download_button(
-            "Download clean_data_id.csv",
-            data=to_csv_bytes(df_clean),
-            file_name="clean_data_id.csv",
-            mime="text/csv",
+    st.dataframe(overview, width="stretch")
+
+    with st.expander("How are prices calculated?"):
+        st.markdown(
+            """
+            **1. Clean order book**
+
+            - For each item, up to 100 listings are loaded: price + quantity.
+            - Listings are sorted by price and cumulative quantity is tracked to understand depth.
+            - Volume is also aggregated by exact price level.
+
+            **2. Robust center and spread**
+
+            - A volume-weighted median and quartiles (Q1, Q3) are computed.
+            - A robust spread (MAD – median absolute deviation) is used to detect extreme prices via robust z-scores.
+
+            **3. Suspected anchors**
+
+            - Markets are tagged as normal or thin/exclusive depending on volume and dominance of a single price level.
+            - In normal markets, we flag listings with very large |z|, shallow depth and small volume as suspected anchors.
+            - In thin markets, only very high prices with low volume are flagged.
+
+            **4. Suggested prices**
+
+            - Suspected anchors are removed before pricing (unless that would remove everything).
+            - **Fair price**: clean median (volume-weighted in normal markets, per-listing in thin ones).
+            - **Greedy price**: clean Q3 (upper quartile) of prices.
+            - **Fast-sell price**:
+              - Thin markets: around the 3rd cheapest clean listing.
+              - Unit-style markets: around the N-th cheapest clean listing.
+              - Bulk markets: first price where cumulative clean volume reaches a target number of units.
+            """
         )
-        st.download_button(
-            "Download market_list.csv",
-            data=to_csv_bytes(df_market),
-            file_name="market_list.csv",
-            mime="text/csv",
-        )
-        st.download_button(
-            "Download market_list_long.csv",
-            data=to_csv_bytes(df_long),
-            file_name="market_list_long.csv",
-            mime="text/csv",
-        )
-        st.download_button(
-            "Download market_list_enriched.csv",
-            data=to_csv_bytes(df_enriched),
-            file_name="market_list_enriched.csv",
-            mime="text/csv",
-        )
-        st.download_button(
-            "Download market_suggestions.csv",
-            data=to_csv_bytes(df_summary_sorted),
-            file_name="market_suggestions.csv",
-            mime="text/csv",
-        )
+
+    # -----------------------------------------------------------------
+    # DETAILED TABLES (EXPANDERS)
+    # -----------------------------------------------------------------
+
+    with st.expander("Parsed segments"):
+        st.dataframe(df_parsed_view, width="stretch")
+
+    with st.expander("Raw market data"):
+        st.dataframe(df_market, width="stretch")
+
+    with st.expander("Detailed pricing diagnostics"):
+        st.dataframe(df_summary_sorted, width="stretch")
