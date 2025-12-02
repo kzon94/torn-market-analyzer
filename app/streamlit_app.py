@@ -241,7 +241,7 @@ if submitted:
         if pd.isna(x):
             return ""
         try:
-            return f"{int(round(x)):,}"
+            return f"{int(x):,}"
         except Exception:
             return str(x)
 
