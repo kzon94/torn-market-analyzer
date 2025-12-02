@@ -236,16 +236,22 @@ if submitted:
         }
     )
 
-    st.dataframe(
-        overview,
-        column_config={
-            "My quantity": st.column_config.NumberColumn(format="%,d"),
-            "Fast-sell price": st.column_config.NumberColumn(format="%,.0f"),
-            "Fair price": st.column_config.NumberColumn(format="%,.0f"),
-            "Greedy price": st.column_config.NumberColumn(format="%,.0f"),
-        },
-        width="stretch",
-    )
+    # Format numbers with thousands separator (comma) as strings
+    def fmt_int(x):
+        if pd.isna(x):
+            return ""
+        try:
+            return f"{int(round(x)):,}"
+        except Exception:
+            return str(x)
+
+    overview_display = overview.copy()
+    overview_display["My quantity"] = overview_display["My quantity"].apply(fmt_int)
+    overview_display["Fast-sell price"] = overview_display["Fast-sell price"].apply(fmt_int)
+    overview_display["Fair price"] = overview_display["Fair price"].apply(fmt_int)
+    overview_display["Greedy price"] = overview_display["Greedy price"].apply(fmt_int)
+
+    st.dataframe(overview_display, width="stretch")
 
     # -----------------------------------------------------------------
     # DETAILED TABLES (EXPANDERS)
