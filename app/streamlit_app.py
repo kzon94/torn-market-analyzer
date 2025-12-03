@@ -103,7 +103,6 @@ with st.expander("How are prices calculated?"):
              - Thin markets: around the 3rd cheapest clean listing.
              - Unit-style markets: around the N-th cheapest clean listing.
              - Bulk markets: first price where cumulative clean volume reaches a target units threshold.
-             - Finally, the app subtracts **1$** from that fast-sell level so you undercut the last bulk wall by 1.
         """
     )
 
