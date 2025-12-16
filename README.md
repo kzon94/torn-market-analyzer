@@ -1,8 +1,22 @@
 # Kzon's Torn Market Analyzer
 
-This project is a Streamlit web application that analyzes player inventory listings from the Torn online game.
+**Torn Market Analyzer** is a Python-based analytics tool with a Streamlit web interface designed to analyze the **Item Market** of the online game **Torn**.
 
-Users can paste their **Add Listing** text directly from Torn’s Item Market, and the app automatically parses item names, matches them against a local dictionary, retrieves market data from Torn’s public API, and computes detailed market analytics and price recommendations.
+The application allows users to paste raw text copied directly from Torn’s **Add Listing** page. From this input, the tool parses the inventory, matches items to Torn IDs, retrieves live market data via Torn’s public API, and computes **robust, market-aware price recommendations** tailored to different market structures.
+
+---
+
+## Core Workflow
+
+1. **Paste Add Listing text** from Torn’s Item Market
+2. **Parse & normalize inventory data**
+3. **Match items to Torn item IDs** using a local dictionary + fuzzy matching
+4. **Fetch live market listings** (up to 100 sell listings per item)
+5. **Clean and analyze the market book**
+6. **Compute three sale prices per item** based on market structure
+7. **Display results and diagnostics directly in the UI**
+
+No files are downloaded and no data is written externally.
 
 ---
 
@@ -10,44 +24,79 @@ Users can paste their **Add Listing** text directly from Torn’s Item Market, a
 
 ### Input Processing
 
-* Accepts raw text copied from the Torn "Add Listing" market page.
-* Parses item names, quantities, and ignores irrelevant UI elements.
-* Automatically removes untradable or equipped items.
-* Applies fuzzy matching to map item names to Torn item IDs.
-* Uses a local dictionary file (`torn_item_dictionary.csv`).
+* Accepts raw text copied from Torn’s **Add Listing** page.
+* Robust parsing of:
+
+  * Item names
+  * Quantities
+  * UI noise and irrelevant lines
+* Automatically ignores:
+
+  * Equipped items
+  * Untradable items
+* Item matching uses:
+
+  * Normalized item keys
+  * Fuzzy matching (`token_set_ratio`)
+* Item resolution is backed by a local dictionary:
+
+  * `torn_item_dictionary.csv`
+
+---
 
 ### Market Data Retrieval
 
-* Queries Torn's `itemmarket` endpoint using the user’s public API key.
-* Fetches the first 10 lowest sell listings for each matched item.
-* Includes built-in rate limiting with a token bucket system.
+* Queries Torn’s public `itemmarket` endpoint.
+* Fetches **up to 100 lowest sell listings per item**.
+* Supports multiple API key injection methods.
+* Includes a built-in **token bucket rate limiter** to respect Torn API limits.
 
-### Market Analytics
+---
 
-* Computes KPIs such as:
+### Market Cleaning & Structure Detection
 
-  * Minimum/maximum price
-  * Weighted mean price
-  * Mean price for the first 20 units
-  * Price spread and volatility
-  * Total market depth
-* Generates recommended sale prices based on market structure and Torn’s 5% market fee.
+Before pricing, the market is cleaned and classified:
 
-### Output
+* Detection of **suspected price anchors** using:
 
-* Displays parsed data, raw market listings, KPIs, and price recommendations.
-* Allows downloading all processed datasets as CSV files:
+  * Robust Z-scores (MAD-based)
+  * Depth concentration
+  * Volume dominance per price level
+* Differentiation between:
 
-  * `clean_data_id.csv`
-  * `market_list.csv`
-  * `market_kpis.csv`
-  * `market_suggestions.csv`
+  * **Bulk markets** (stack-based trading)
+  * **Unit-style markets** (single-item listings)
+  * **Thin / exclusive markets** (low depth or dominant price levels)
 
-### User Experience
+All downstream pricing logic depends on this classification.
 
-* Clean, centered UI with a collapsible “How this app works” guide.
-* Caches the user’s public API key locally for convenience.
-* Fully responsive layout designed for ease of use.
+---
+
+### Price Recommendations
+
+For each item, the app computes **three prices**, always derived from the **cleaned market**:
+
+#### 1. Fast-sell price
+
+* Designed for quick execution.
+* **Applied rules:**
+
+  * **Bulk markets only**:
+    - Always **1$ below the relevant bulk wall**
+  * **Unit-style or exclusive markets**:
+    - No undercut applied; price is left unchanged (float-safe rounded).
+* Guarantees that in bulk markets the fast-sell price **never equals the wall price**.
+
+#### 2. Fair price
+
+* Robust estimate of the “true” market value.
+* Computed as the **median of the cleaned price distribution**.
+* Resistant to outliers and anchors.
+
+#### 3. Greedy price
+
+* Upper-end pricing strategy.
+* Computed as the **upper quartile (Q3)** of the cleaned market.
 
 ---
 
@@ -57,20 +106,20 @@ Users can paste their **Add Listing** text directly from Torn’s Item Market, a
 torn-market-analyzer/
 │
 ├── app/
-│   └── streamlit_app.py         # Main Streamlit UI and pipeline
+│   └── streamlit_app.py         # Streamlit UI and orchestration
 │
 ├── src/
 │   └── tma/
-│       ├── config.py            # Global constants and dictionary configuration
-│       ├── matching.py          # Text parsing, cleaning, fuzzy matching
-│       ├── http_api.py          # API calls to Torn (itemmarket)
-│       ├── rate_limit.py        # Token bucket for rate limiting
-│       ├── analytics.py         # KPI calculations and price recommendations
-│       ├── io_utils.py          # CSV export and formatting helpers
+│       ├── config.py            # Global constants and thresholds
+│       ├── matching.py          # Text parsing and fuzzy item matching
+│       ├── http_api.py          # Torn API client (itemmarket)
+│       ├── rate_limit.py        # Token bucket rate limiter
+│       ├── market_enrichment.py # Market cleaning & pricing logic
+│       ├── io_utils.py          # Formatting helpers (UI-focused)
 │       └── __init__.py
 │
 ├── data/
-│   └── torn_item_dictionary.csv # Local dictionary for item name mapping
+│   └── torn_item_dictionary.csv # Local item name → ID mapping
 │
 ├── LICENSE
 ├── README.md
@@ -81,15 +130,12 @@ torn-market-analyzer/
 
 ## Requirements
 
-The application requires:
-
-* Python 3.10 or later
+* Python **3.10+**
 * Streamlit
 * Pandas
 * NumPy
 * Requests
 * PyArrow
-
 
 ---
 
@@ -97,31 +143,31 @@ The application requires:
 
 1. Install dependencies:
 
-```
+```bash
 pip install -r requirements.txt
 ```
 
-2. Run the Streamlit app:
+2. Launch the app:
 
-```
+```bash
 streamlit run app/streamlit_app.py
 ```
 
-3. Open the link shown in terminal (usually `http://localhost:8501`).
+3. Open the provided local URL (usually `http://localhost:8501`).
 
 ---
 
-## Notes About Torn API Usage
+## Torn API Usage Notes
 
-* Only **public API keys** are used.
-* The app performs **read-only** calls to `itemmarket`.
-* User keys are only cached locally via Streamlit and never transmitted elsewhere.
-* The app respects Torn API rate limits through controlled request throttling.
+* Uses **public Torn API keys only**.
+* Performs **read-only** requests to the `itemmarket` endpoint.
+* API keys are cached locally by Streamlit for convenience.
+* No keys or data are transmitted outside the user’s machine.
+* All requests respect Torn’s rate limits via controlled throttling.
 
 ---
 
 ## License
 
-This project is licensed under the MIT License.
-See the `LICENSE` file for full details.
-
+This project is licensed under the **MIT License**.
+See the `LICENSE` file for details.
