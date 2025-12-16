@@ -309,6 +309,8 @@ def compute_price_suggestions_for_item(df_item: pd.DataFrame) -> dict:
     df_clean_sorted = df_clean.sort_values("price").copy()
     df_clean_sorted["cum_qty_clean"] = df_clean_sorted["quantity"].cumsum()
 
+    is_bulk_mode = (not exclusive_mode) and (avg_qty_per_listing > 2.0)
+
     if exclusive_mode:
         # Thin/exclusive: N-th cheapest clean listing
         exclusive_fast_index = 3
@@ -328,10 +330,17 @@ def compute_price_suggestions_for_item(df_item: pd.DataFrame) -> dict:
             else:
                 fast_sell_raw = float(df_clean_sorted["price"].iloc[-1])
 
-    # -------- Final fast-sell tweak: always 1$ below that level --------
+    # -------- Final fast-sell tweak: 1$ below bulk wall ONLY --------
     if np.isfinite(fast_sell_raw):
-        # floor to kill any float noise and then subtract 1
-        fast_sell_price = max(math.floor(fast_sell_raw) - 1, 0.0)
+        # Kill any float noise first
+        base_price = float(round(fast_sell_raw))
+
+        if is_bulk_mode:
+            # Bulk: must be 1$ below the selected wall level
+            fast_sell_price = max(math.floor(base_price) - 1, 0.0)
+        else:
+            # Unit/exclusive: no undercut rule
+            fast_sell_price = max(base_price, 0.0)
     else:
         fast_sell_price = float("nan")
 
