@@ -16,8 +16,6 @@ The application allows users to paste raw text copied directly from Torn’s **A
 6. **Compute three sale prices per item** based on market structure
 7. **Display results and diagnostics directly in the UI**
 
-No files are downloaded and no data is written externally.
-
 ---
 
 ## Features
@@ -47,7 +45,7 @@ No files are downloaded and no data is written externally.
 ### Market Data Retrieval
 
 * Queries Torn’s public `itemmarket` endpoint.
-* Fetches **up to 100 lowest sell listings per item**.
+* Fetches **up to 100 sell listings per item**.
 * Supports multiple API key injection methods.
 * Includes a built-in **token bucket rate limiter** to respect Torn API limits.
 
@@ -119,7 +117,7 @@ torn-market-analyzer/
 │       └── __init__.py
 │
 ├── data/
-│   └── torn_item_dictionary.csv # Local item name → ID mapping
+│   └── torn_item_dictionary.csv # Local item name - ID mapping
 │
 ├── LICENSE
 ├── README.md
