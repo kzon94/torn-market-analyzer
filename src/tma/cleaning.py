@@ -1,11 +1,12 @@
 import re
 from typing import Any
 
-_PRICE_RE = re.compile(r'^\$([\d,]+)$')
-_QTY_RE = re.compile(r'^x(\d+)$', re.IGNORECASE)
-_STAT_RE = re.compile(r'^\d+(?:\.\d+)?$')
+_PRICE_RE = re.compile(r"^\$([\d,]+)$")
+_QTY_RE = re.compile(r"^x(\d+)$", re.IGNORECASE)
+_STAT_RE = re.compile(r"^\d+(?:\.\d+)?$")
 
 _SKIP_EXACT = {"Qty", "Price", "RRP", "Untradable", "Equipped"}
+
 
 def parse_add_listings_clipboard(raw_text: str) -> list[dict[str, Any]]:
     lines = [ln.strip() for ln in raw_text.splitlines()]
@@ -18,7 +19,7 @@ def parse_add_listings_clipboard(raw_text: str) -> list[dict[str, Any]]:
         nonlocal cur
         if not cur:
             return
-        if cur["untradable"] or cur["equipped"]:
+        if cur.get("untradable") or cur.get("equipped"):
             cur = None
             return
         items.append(cur)
@@ -69,6 +70,9 @@ def parse_add_listings_clipboard(raw_text: str) -> list[dict[str, Any]]:
 
         if ln.startswith("Select "):
             cur["has_select"] = True
+            continue
+
+        if ln.startswith("Make my listing of "):
             continue
 
         m = _QTY_RE.match(ln)
