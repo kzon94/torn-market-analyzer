@@ -1,4 +1,4 @@
-# Kzon's Torn Market Analyzer
+# Torn Market Analyzer
 
 **Torn Market Analyzer** is a Python-based analytics tool with a Streamlit web interface designed to analyze the **Item Market** of the online game **Torn**.
 
@@ -169,3 +169,4 @@ streamlit run app/streamlit_app.py
 
 This project is licensed under the **MIT License**.
 See the `LICENSE` file for details.
+
