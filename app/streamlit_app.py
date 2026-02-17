@@ -1,40 +1,165 @@
 import sys
+import time
+import threading
 from pathlib import Path
 
 import pandas as pd
+import requests
 import streamlit as st
-
-# ---------------------------------------------------------------------
-# PATHS & IMPORTS
-# ---------------------------------------------------------------------
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 SRC_DIR = ROOT_DIR / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from tma.config import DICT_PATH, RATE_LIMIT_PER_MIN, FUZZY_THRESHOLD
-from tma.matching import load_dict, clean_and_match_from_raw, aggregate_id_quantity
-from tma.http_api import session_for_requests, fetch_100
-from tma.rate_limit import TokenBucket
-from tma.market_enrichment import (
-    wide_to_long,
-    enrich_all_items,
-    build_summary_from_enriched,
-)
+from tma.inventory_matcher import match_inventory
+from tma.market_enrichment import wide_to_long, enrich_all_items, build_summary_from_enriched
 
-# ---------------------------------------------------------------------
-# APP CONFIG
-# ---------------------------------------------------------------------
+BASE_URL = "https://api.torn.com/v2"
+MAX_WORKERS = 5
+RATE_LIMIT_PER_MIN = 90
+RETRIES = 3
+TIMEOUT = 15
 
-st.set_page_config(page_title="Kzon's Torn Market Analyzer", layout="centered")
+DICT_PATH = (ROOT_DIR / "data" / "torn_item_dictionary.csv").resolve()
+
+
+class TokenBucket:
+    def __init__(self, rate_per_min: int, capacity: int | None = None) -> None:
+        self.rate_per_sec = rate_per_min / 60.0
+        self.capacity = capacity or rate_per_min
+        self.tokens = float(self.capacity)
+        self.last = time.perf_counter()
+        self.lock = threading.Lock()
+
+    def take(self, tokens: int = 1) -> None:
+        while True:
+            with self.lock:
+                now = time.perf_counter()
+                self.tokens = min(self.capacity, self.tokens + (now - self.last) * self.rate_per_sec)
+                self.last = now
+                if self.tokens >= tokens:
+                    self.tokens -= tokens
+                    return
+            time.sleep(0.01)
+
+
+def session_for_requests() -> requests.Session:
+    session = requests.Session()
+    adapter = requests.adapters.HTTPAdapter(
+        pool_connections=MAX_WORKERS * 10,
+        pool_maxsize=MAX_WORKERS * 10,
+    )
+    session.mount("https://", adapter)
+    session.headers.update(
+        {
+            "accept": "application/json",
+            "User-Agent": "torn-itemmarket-web/1.1",
+        }
+    )
+    return session
+
+
+def attempt_call(
+    session: requests.Session,
+    bucket: TokenBucket,
+    api_key: str,
+    item_id: int,
+    mode: int,
+) -> tuple[int | None, dict]:
+    url = f"{BASE_URL}/market/{item_id}/itemmarket"
+    headers: dict[str, str] = {}
+    params: dict[str, int | str] = {"limit": 100, "offset": 0}
+
+    if mode == 1:
+        headers["Authorization"] = f"Apikey {api_key}"
+    elif mode == 2:
+        headers["Authorization"] = f"ApiKey {api_key}"
+    else:
+        params["key"] = api_key
+
+    bucket.take(1)
+    resp = session.get(url, headers=headers, params=params, timeout=TIMEOUT)
+    return resp.status_code, resp.json()
+
+
+def fetch_100(
+    session: requests.Session,
+    bucket: TokenBucket,
+    api_key: str,
+    item_id: int,
+    my_quantity: int,
+) -> dict:
+    backoff = 0.8
+
+    for _ in range(1, RETRIES + 1):
+        for mode in (1, 2, 3):
+            try:
+                status, data = attempt_call(session, bucket, api_key, item_id, mode)
+            except Exception as exc:
+                status, data = None, {"error": {"code": -1, "error": str(exc)}}
+
+            if isinstance(data, dict) and "error" in data:
+                code = data["error"].get("code")
+                msg = data["error"].get("error")
+
+                if code == 2 and mode != 3:
+                    continue
+
+                if code in (0, 10) or status in (429, 500, 502, 503, 504):
+                    time.sleep(backoff)
+                    backoff *= 1.6
+                    break
+
+                return {
+                    "item_id": item_id,
+                    "my_quantity": my_quantity,
+                    "error": f"API error {code}: {msg}",
+                }
+
+            itemmarket = (data or {}).get("itemmarket", {}) or {}
+            item = itemmarket.get("item", {}) or {}
+            listings = itemmarket.get("listings", []) or []
+
+            n = min(len(listings), 100)
+
+            row: dict[str, object] = {
+                "item_id": item.get("id", item_id),
+                "item_name": item.get("name"),
+                "item_type": item.get("type"),
+                "average_price": item.get("average_price"),
+                "my_quantity": my_quantity,
+            }
+
+            for i, listing in enumerate(listings[:n], start=1):
+                row[f"price_{i}"] = listing.get("price")
+                row[f"amount_{i}"] = listing.get("amount")
+
+            for i in range(n + 1, 101):
+                row[f"price_{i}"] = None
+                row[f"amount_{i}"] = None
+
+            return row
+
+        time.sleep(backoff)
+        backoff *= 1.6
+
+    return {"item_id": item_id, "my_quantity": my_quantity, "error": "Exhausted retries"}
+
+
+def fmt_int(x) -> str:
+    if pd.isna(x):
+        return ""
+    try:
+        return f"{int(x):,}"
+    except Exception:
+        return str(x)
+
+
+st.set_page_config(page_title="Torn Market Analyzer", layout="centered")
 
 if "api_key" not in st.session_state:
     st.session_state["api_key"] = ""
-
-# ---------------------------------------------------------------------
-# GLOBAL STYLES
-# ---------------------------------------------------------------------
 
 st.markdown(
     """
@@ -49,16 +174,11 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ---------------------------------------------------------------------
-# HEADER
-# ---------------------------------------------------------------------
-
-st.title("Kzon's Torn Market Analyzer")
-
+st.title("Torn Market Analyzer")
 st.markdown(
     """
     <p style="margin-top:-12px; font-size:0.95rem; color:#666;">
-        Under development by 
+        Under development by
         <a href="https://www.torn.com/profiles.php?XID=3968250" target="_blank" style="text-decoration:none;">
             Kzon [3968250]
         </a>. Coffee tips are always appreciated :)
@@ -67,56 +187,47 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-with st.expander("How are prices calculated?"):
+with st.expander("How it works"):
     st.markdown(
         """
-        **How to use the app**
+### How to use the app
 
-        - Go to the **Add Listing** section of the Item Market.
-        - Copy the item list (the part with item names and quantities).
-        - Paste it in the text box below; prices and untradable/equipped tags are ignored.
-        - Enter your **public Torn API key** (read-only) so the app can call the `itemmarket` endpoint.
-        - The app fetches up to the first 100 listings per item and computes suggested prices.
+1. Go to the Add Listings section of the Item Market.
+2. Copy the item list (the part with item names and quantities).
+3. Paste it in the text box below; prices and untradable/equipped tags are ignored.
+4. Enter your public Torn API key (read-only) so the app can call the itemmarket endpoint.
+5. The app fetches up to the first 100 listings per item and computes suggested prices.
 
-        **What the app does under the hood**
+### What the app does
 
-        1. **Clean order book**
-           - For each item, up to 100 listings (price + quantity) are loaded.
-           - Listings are sorted by price and cumulative quantity is tracked to understand market depth.
-           - Volume is also aggregated by exact price level to detect dominant price walls.
+#### Clean order book
+- For each item, up to 100 listings (price + quantity) are loaded.
+- Listings are sorted by price and cumulative quantity is tracked to understand market depth.
+- Volume is also aggregated by exact price level to detect dominant price walls.
 
-        2. **Robust center and spread**
-           - A volume-weighted median and quartiles (Q1, Q3) are computed.
-           - A robust spread (MAD – median absolute deviation) around the median is used to derive robust z-scores.
-           - This helps flag extremely cheap/expensive prices relative to the bulk of the market.
+#### Robust center and spread
+- A volume-weighted median and quartiles (Q1, Q3) are computed.
+- A robust spread (MAD – median absolute deviation) around the median is used to derive robust z-scores.
+- This helps flag extremely cheap/expensive prices relative to the bulk of the market.
 
-        3. **Suspected anchors**
-           - Markets are marked as **normal** or **thin/exclusive** based on total units and dominance of a single price level.
-           - In normal markets, suspected anchors are listings with large |z|, shallow depth and small volume.
-           - In thin markets, only very high prices far above the median with low volume are flagged.
-           - These suspected anchors are removed for pricing (unless that would remove everything).
+#### Suspected anchors
+- Markets are marked as normal or thin/exclusive based on total units and dominance of a single price level.
+- In normal markets, suspected anchors are listings with large |z|, shallow depth and small volume.
+- In thin markets, only very high prices far above the median with low volume are flagged.
+- These suspected anchors are removed for pricing (unless that would remove everything).
 
-        4. **Suggested prices**
-           - **Fair price**: clean median (volume-weighted in normal markets, per-listing in thin ones).
-           - **Greedy price**: clean Q3 (upper quartile) of prices.
-           - **Fast-sell price**:
-             - Thin markets: around the 3rd cheapest clean listing.
-             - Unit-style markets: around the N-th cheapest clean listing.
-             - Bulk markets: first price where cumulative clean volume reaches a target units threshold.
+#### Suggested prices
+- **Fair price:** clean median (volume-weighted in normal markets, per-listing in thin ones).
+- **Greedy price:** clean Q3 (upper quartile) of prices.
+- **Fast-sell price:**
+  - Thin markets: around the 3rd cheapest clean listing.
+  - Unit-style markets: around the N-th cheapest clean listing.
+  - Bulk markets: first price where cumulative clean volume reaches a target units threshold.
         """
     )
 
-# ---------------------------------------------------------------------
-# INPUT FORM
-# ---------------------------------------------------------------------
-
-submitted = False
-raw = ""
-api_key = ""
-
 with st.form("input_form", clear_on_submit=False):
     st.subheader("Item Market listings")
-
     st.markdown(
         "[Quick access to your listings](https://www.torn.com/page.php?sid=ItemMarket#/addListing)",
         unsafe_allow_html=False,
@@ -125,7 +236,7 @@ with st.form("input_form", clear_on_submit=False):
     raw = st.text_area(
         "Paste your items",
         height=220,
-        placeholder="Paste your full Add Listing items text here…",
+        placeholder="Paste your full Add Listings items text here…",
     )
 
     api_key = st.text_input(
@@ -136,13 +247,9 @@ with st.form("input_form", clear_on_submit=False):
 
     submitted = st.form_submit_button("Run")
 
-# ---------------------------------------------------------------------
-# PIPELINE
-# ---------------------------------------------------------------------
-
 if submitted:
     if not DICT_PATH.exists():
-        st.error("Dictionary CSV not found (data/torn_item_dictionary.csv).")
+        st.error("Dictionary CSV not found.")
         st.stop()
     if not raw or not raw.strip():
         st.error("Listings text is empty.")
@@ -151,39 +258,32 @@ if submitted:
         st.error("API key required.")
         st.stop()
 
+    api_key = api_key.strip()
     st.session_state["api_key"] = api_key
 
-    # 1) Cleaning & matching
-    with st.spinner("Cleaning & matching…"):
-        dict_map = load_dict(DICT_PATH)
-        clean_rows = clean_and_match_from_raw(raw, dict_map, threshold=FUZZY_THRESHOLD)
-        df_clean = pd.DataFrame(clean_rows)
-        if df_clean.empty:
+    with st.spinner("Parsing & matching…"):
+        result = match_inventory(raw, DICT_PATH)
+        if not result.matched:
             st.warning("No matches found.")
             st.stop()
 
-        parsed_cols = [
-            "input_segment",
-            "cleaned_name",
-            "normalized_key",
-            "quantity",
-            "id",
-        ]
-        df_parsed_view = df_clean.reindex(columns=parsed_cols)
+        df_parsed = (
+            pd.DataFrame([{"name": it.name, "id": it.item_id, "quantity": it.qty} for it in result.matched])
+            .sort_values("name")
+            .reset_index(drop=True)
+        )
 
-    # 2) Aggregate quantities per item_id
-    agg = aggregate_id_quantity(clean_rows)
-    if not agg:
-        st.warning("No valid item IDs after cleaning.")
-        st.stop()
+        agg = [(it.item_id, it.qty) for it in result.matched]
+        if not agg:
+            st.warning("No valid item IDs after matching.")
+            st.stop()
 
-    # 3) Fetch market data (wide format)
     with st.spinner("Fetching market data…"):
         sess = session_for_requests()
         bucket = TokenBucket(RATE_LIMIT_PER_MIN)
 
-        out_rows = [fetch_100(sess, bucket, api_key, iid, qty) for iid, qty in agg]
-        df_market = pd.DataFrame(out_rows)
+        rows = [fetch_100(sess, bucket, api_key, iid, qty) for iid, qty in agg]
+        df_market = pd.DataFrame(rows)
 
         for i in range(1, 101):
             pcol = f"price_{i}"
@@ -193,39 +293,24 @@ if submitted:
             if acol in df_market.columns:
                 df_market[acol] = pd.to_numeric(df_market[acol], errors="coerce")
 
-        for c in ["average_price", "my_quantity", "item_id"]:
+        for c in ("average_price", "my_quantity", "item_id"):
             if c in df_market.columns:
                 df_market[c] = pd.to_numeric(df_market[c], errors="coerce")
 
-    # 4) Anchor-aware price suggestions
-    with st.spinner("Computing anchor-aware price suggestions…"):
+    with st.spinner("Computing price suggestions…"):
         df_long = wide_to_long(df_market)
-
         if df_long.empty:
             st.warning("No valid listings found in the market data.")
             st.stop()
 
         df_enriched = enrich_all_items(df_long)
-        df_summary = build_summary_from_enriched(df_enriched)
-        df_summary_sorted = df_summary.sort_values("item_name").reset_index(drop=True)
-
-    # -----------------------------------------------------------------
-    # MAIN PRICE OVERVIEW (USER-FRIENDLY)
-    # -----------------------------------------------------------------
+        df_summary = build_summary_from_enriched(df_enriched).sort_values("item_name").reset_index(drop=True)
 
     st.subheader("Price overview")
 
-    overview = df_summary_sorted[
-        [
-            "item_name",
-            "my_quantity",
-            "fast_sell_price",
-            "fair_price",
-            "greedy_price",
-        ]
-    ].copy()
-
-    overview = overview.rename(
+    overview = df_summary[
+        ["item_name", "my_quantity", "fast_sell_price", "fair_price", "greedy_price"]
+    ].rename(
         columns={
             "item_name": "Item",
             "my_quantity": "My quantity",
@@ -235,32 +320,42 @@ if submitted:
         }
     )
 
-    # Format numbers with thousands separator (comma) as strings
-    def fmt_int(x):
-        if pd.isna(x):
-            return ""
-        try:
-            return f"{int(x):,}"
-        except Exception:
-            return str(x)
-
     overview_display = overview.copy()
-    overview_display["My quantity"] = overview_display["My quantity"].apply(fmt_int)
-    overview_display["Fast-sell price"] = overview_display["Fast-sell price"].apply(fmt_int)
-    overview_display["Fair price"] = overview_display["Fair price"].apply(fmt_int)
-    overview_display["Greedy price"] = overview_display["Greedy price"].apply(fmt_int)
+    for col in ["My quantity", "Fast-sell price", "Fair price", "Greedy price"]:
+        overview_display[col] = overview_display[col].apply(fmt_int)
 
-    st.dataframe(overview_display, width="stretch")
+    st.dataframe(overview_display, width="stretch", hide_index=True)
 
-    # -----------------------------------------------------------------
-    # DETAILED TABLES (EXPANDERS)
-    # -----------------------------------------------------------------
+    with st.expander("Auxiliary tables"):
+        t_parsed, t_unmatched, t_wide, t_long, t_diag = st.tabs(
+            [
+                "Parsed items",
+                "Unmatched items",
+                "Market data (wide)",
+                "Market data (long)",
+                "Pricing diagnostics",
+            ]
+        )
 
-    with st.expander("Parsed segments"):
-        st.dataframe(df_parsed_view, width="stretch")
+        with t_parsed:
+            st.dataframe(df_parsed, width="stretch", hide_index=True)
 
-    with st.expander("Raw market data"):
-        st.dataframe(df_market, width="stretch")
+        with t_unmatched:
+            if result.unmatched:
+                df_unmatched = (
+                    pd.DataFrame(result.unmatched, columns=["name", "qty"])
+                    .sort_values("name")
+                    .reset_index(drop=True)
+                )
+                st.dataframe(df_unmatched, width="stretch", hide_index=True)
+            else:
+                st.info("No unmatched items.")
 
-    with st.expander("Detailed pricing diagnostics"):
-        st.dataframe(df_summary_sorted, width="stretch")
+        with t_wide:
+            st.dataframe(df_market, width="stretch", hide_index=True)
+
+        with t_long:
+            st.dataframe(df_long, width="stretch", hide_index=True)
+
+        with t_diag:
+            st.dataframe(df_summary, width="stretch", hide_index=True)
