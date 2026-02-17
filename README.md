@@ -2,7 +2,7 @@
 
 **Torn Market Analyzer** is a Python + Streamlit tool to help you price **Item Market** listings in the online game **Torn**.
 
-You paste the raw text from Torn’s **Item Market → Add Listing** page, the app matches items to Torn item IDs using a local dictionary, fetches up to the first **100 sell listings** per item from Torn’s **v2 API**, cleans the order book, and outputs **three market-aware price suggestions** per item.
+You paste the raw text from Torn’s **Item Market -> Add Listing** page, the app matches items to Torn item IDs using a local dictionary, fetches up to the first **100 sell listings** per item from Torn’s **v2 API**, cleans the order book, and outputs **three market-aware price suggestions** per item.
 
 
 
@@ -131,4 +131,5 @@ Copy the generated CSV into `data/torn_item_dictionary.csv` for the app to use t
 * Performs **read-only** requests to the Item Market endpoint.
 * No keys or market data are transmitted anywhere except directly to Torn.
 * The key is stored only in Streamlit session state while the app is running.
+
 
