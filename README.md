@@ -28,7 +28,7 @@ The UI also shows parsed items, unmatched items, and market diagnostics.
 - Item names are resolved through a local dictionary:
   - `data/torn_item_dictionary.csv` (columns: `key`, `id`)
 
-> Matching is currently **dictionary-based** (exact match against dictionary keys). Unmatched items are displayed in the UI.
+> Matching is **dictionary-based**. Unmatched items are displayed in the UI.
 
 ### 2) Market fetch (read-only)
 
@@ -65,8 +65,6 @@ All prices are computed from the **cleaned** order book:
 
 
 ## Project structure
-
-Recommended layout:
 
 ```
 
@@ -133,3 +131,4 @@ Copy the generated CSV into `data/torn_item_dictionary.csv` for the app to use t
 * Performs **read-only** requests to the Item Market endpoint.
 * No keys or market data are transmitted anywhere except directly to Torn.
 * The key is stored only in Streamlit session state while the app is running.
+
